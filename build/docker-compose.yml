@@ -12,15 +12,6 @@ services:
       - jaeger
     volumes:
       - ../config/compose.toml:/app/config/config.toml
-  swagger-ui:
-    build:
-      context: ../
-      dockerfile: build/Dockerfile-swagger
-    ports:
-      - "8002:8080"
-    volumes:
-      - ../doc/swagger.yaml:/app/swagger.yaml
-    command: ["serve", "/app/swagger.yaml", "--no-open", "--port", "8080"]
   gui:
     build:
       context: ../

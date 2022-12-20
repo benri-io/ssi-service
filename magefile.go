@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
 	"github.com/magefile/mage/mg"
@@ -26,6 +27,12 @@ var (
 
 // Build builds the library.
 func Build() error {
+	fmt.Println("Building specs...")
+	err := Spec()
+	if err != nil {
+		return errors.Wrap(err, "building spec")
+	}
+
 	fmt.Println("Building library...")
 	return sh.Run(Go, "build", "-tags", "jwx_es256k", "./...")
 }
