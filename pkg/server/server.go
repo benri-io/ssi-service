@@ -29,7 +29,7 @@ const (
 	SchemasPrefix       = "/schemas"
 	CredentialsPrefix   = "/credentials"
 	StatusPrefix        = "/status"
-	SwaggerPrefix       = "/docs"
+	SwaggerPrefix       = "/swagger"
 	PresentationsPrefix = "/presentations"
 	DefinitionsPrefix   = "/definitions"
 	SubmissionsPrefix   = "/submissions"
@@ -232,7 +232,7 @@ func (s *SSIServer) SwaggerUI(service svcframework.Service) (err error) {
 		return util.LoggingErrorMsg(err, "creating swagger router")
 	}
 	handlerPath := V1Prefix + SwaggerPrefix
-	s.Handle(http.MethodGet, path.Join(handlerPath, "/swagger.yaml"), swaggerRouter.ServeSpec)
+	s.Handle(http.MethodGet, path.Join(handlerPath, "/index.yaml"), swaggerRouter.ServeSpec)
 	s.Handle(http.MethodGet, path.Join(handlerPath, "/ui/*"), swaggerRouter.ServeUI)
 	return
 }

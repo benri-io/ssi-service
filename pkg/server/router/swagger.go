@@ -54,7 +54,7 @@ func (sr SwaggerRouter) ServeSpec(ctx context.Context, w http.ResponseWriter, r 
 // @Router       /v1/docs [get]
 func (sr SwaggerRouter) ServeUI(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
 	httpSwagger.Handler(
-		httpSwagger.URL("http://localhost:3000/v1/docs/swagger.yaml"), //The url pointing to API definition
+		httpSwagger.URL("http://localhost:3000/v1/swagger/index.yaml"), //The url pointing to API definition
 	).ServeHTTP(w, r)
 	fmt.Fprintf(w, "hi")
 	return nil
