@@ -15,6 +15,7 @@ const (
 	Manifest     Type = "manifest"
 	Presentation Type = "presentation"
 	Operation    Type = "operation"
+	Swagger      Type = "swagger"
 
 	StatusReady    StatusState = "ready"
 	StatusNotReady StatusState = "not_ready"
