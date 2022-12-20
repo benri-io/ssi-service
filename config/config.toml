@@ -44,3 +44,6 @@ name = "manifest"
 
 [services.presentation]
 name = "presentation"
+
+[services.swagger]
+name = "swagger"

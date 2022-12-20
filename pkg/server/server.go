@@ -29,6 +29,7 @@ const (
 	SchemasPrefix       = "/schemas"
 	CredentialsPrefix   = "/credentials"
 	StatusPrefix        = "/status"
+	SwaggerPrefix       = "/swagger"
 	PresentationsPrefix = "/presentations"
 	DefinitionsPrefix   = "/definitions"
 	SubmissionsPrefix   = "/submissions"
@@ -107,6 +108,8 @@ func (s *SSIServer) instantiateRouter(service svcframework.Service) error {
 		return s.PresentationAPI(service)
 	case svcframework.Operation:
 		return s.OperationAPI(service)
+	case svcframework.Swagger:
+		return s.SwaggerUI(service)
 	default:
 		return fmt.Errorf("could not instantiate API for service: %s", serviceType)
 	}
@@ -222,6 +225,18 @@ func (s *SSIServer) OperationAPI(service svcframework.Service) (err error) {
 	return
 }
 
+func (s *SSIServer) SwaggerUI(service svcframework.Service) (err error) {
+
+	swaggerRouter, err := router.NewSwaggerRouter(service)
+	if err != nil {
+		return util.LoggingErrorMsg(err, "creating swagger router")
+	}
+	handlerPath := V1Prefix + SwaggerPrefix
+	s.Handle(http.MethodGet, path.Join(handlerPath, "/index.yaml"), swaggerRouter.ServeSpec)
+	s.Handle(http.MethodGet, path.Join(handlerPath, "/ui/*"), swaggerRouter.ServeUI)
+	return
+}
+
 func (s *SSIServer) ManifestAPI(service svcframework.Service) (err error) {
 	manifestRouter, err := router.NewManifestRouter(service)
 	if err != nil {
@@ -246,5 +261,6 @@ func (s *SSIServer) ManifestAPI(service svcframework.Service) (err error) {
 	s.Handle(http.MethodGet, responsesHandlerPath, manifestRouter.GetResponses)
 	s.Handle(http.MethodGet, path.Join(responsesHandlerPath, "/:id"), manifestRouter.GetResponse)
 	s.Handle(http.MethodDelete, path.Join(responsesHandlerPath, "/:id"), manifestRouter.DeleteResponse)
+
 	return
 }

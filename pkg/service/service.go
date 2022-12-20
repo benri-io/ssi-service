@@ -13,6 +13,7 @@ import (
 	"github.com/tbd54566975/ssi-service/pkg/service/operation"
 	"github.com/tbd54566975/ssi-service/pkg/service/presentation"
 	"github.com/tbd54566975/ssi-service/pkg/service/schema"
+	"github.com/tbd54566975/ssi-service/pkg/service/swagger"
 	"github.com/tbd54566975/ssi-service/pkg/storage"
 )
 
@@ -55,6 +56,9 @@ func validateServiceConfig(config config.ServicesConfig) error {
 	}
 	if config.PresentationConfig.IsEmpty() {
 		return fmt.Errorf("%s no config provided", framework.Presentation)
+	}
+	if config.SwaggerConfig.IsEmpty() {
+		return fmt.Errorf("%s no config provided", framework.Swagger)
 	}
 	return nil
 }
@@ -107,5 +111,10 @@ func instantiateServices(config config.ServicesConfig) ([]framework.Service, err
 		return nil, util.LoggingErrorMsg(err, "could not instantiate the operation service")
 	}
 
-	return []framework.Service{keyStoreService, didService, schemaService, credentialService, manifestService, presentationService, operationService}, nil
+	swaggerService, err := swagger.NewSwaggerService(config.SwaggerConfig)
+	if err != nil {
+		return nil, util.LoggingErrorMsg(err, "could not instantiate the swagger service")
+	}
+
+	return []framework.Service{keyStoreService, didService, schemaService, credentialService, manifestService, presentationService, operationService, swaggerService}, nil
 }

@@ -33,7 +33,7 @@ func Build() error {
 // Artifact builds the binary.
 func Artifact() error {
 	fmt.Println("Building binary...")
-	return sh.Run(Go, "build", "-tags", "jwx_es256k", "-o", "./bin/ssi-service", "./cmd")
+	return sh.Run(Go, "build", "-tags", "jwx_es256k", "-o", "./bin/ssi-service", "./cmd/server")
 }
 
 // Vuln downloads and runs govulncheck https://go.dev/blog/vuln
@@ -117,7 +117,7 @@ func Spec() error {
 	// see a discussion of this topic in https://github.com/swaggo/swag/issues/948.
 	// We also set parseGoList because it's the only way parseDepth works until the following is fixed:
 	// https://github.com/swaggo/swag/issues/1269
-	return sh.Run(swagCommand, "init", "-g", "cmd/main.go", "--pd", "-o", "doc", "-ot", "yaml", "--parseDepth=3", "--parseGoList=false")
+	return sh.Run(swagCommand, "init", "-g", "cmd/server/main.go", "--pd", "-o", "doc", "-ot", "yaml", "--parseDepth=3", "--parseGoList=false")
 }
 
 func runCITests(extraTestArgs ...string) error {

@@ -42,6 +42,17 @@ type ServerConfig struct {
 	EnableSchemaCaching bool          `toml:"enable_schema_caching" conf:"default:true"`
 }
 
+type SwaggerServiceConfig struct {
+	*BaseServiceConfig
+}
+
+func (s *SwaggerServiceConfig) IsEmpty() bool {
+	if s == nil {
+		return true
+	}
+	return reflect.DeepEqual(s, &SwaggerServiceConfig{})
+}
+
 // ServicesConfig represents configurable properties for the components of the SSI Service
 type ServicesConfig struct {
 	// at present, it is assumed that a single storage provider works for all services
@@ -58,6 +69,7 @@ type ServicesConfig struct {
 	CredentialConfig   CredentialServiceConfig   `toml:"credential,omitempty"`
 	ManifestConfig     ManifestServiceConfig     `toml:"manifest,omitempty"`
 	PresentationConfig PresentationServiceConfig `toml:"presentation,omitempty"`
+	SwaggerConfig      SwaggerServiceConfig      `toml:"swagger,omitempty"`
 }
 
 // BaseServiceConfig represents configurable properties for a specific component of the SSI Service
@@ -204,6 +216,9 @@ func LoadConfig(path string) (*SSIServiceConfig, error) {
 			},
 			PresentationConfig: PresentationServiceConfig{
 				BaseServiceConfig: &BaseServiceConfig{Name: "presentation"},
+			},
+			SwaggerConfig: SwaggerServiceConfig{
+				BaseServiceConfig: &BaseServiceConfig{Name: "swagger"},
 			},
 		}
 	} else {
