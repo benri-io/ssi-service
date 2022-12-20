@@ -43,13 +43,14 @@ type ServerConfig struct {
 }
 
 type SwaggerServiceConfig struct {
+	*BaseServiceConfig
 }
 
 func (s *SwaggerServiceConfig) IsEmpty() bool {
 	if s == nil {
 		return true
 	}
-	return reflect.DeepEqual(k, &SwaggerServiceConfig{})
+	return reflect.DeepEqual(s, &SwaggerServiceConfig{})
 }
 
 // ServicesConfig represents configurable properties for the components of the SSI Service
@@ -215,6 +216,9 @@ func LoadConfig(path string) (*SSIServiceConfig, error) {
 			},
 			PresentationConfig: PresentationServiceConfig{
 				BaseServiceConfig: &BaseServiceConfig{Name: "presentation"},
+			},
+			SwaggerConfig: SwaggerServiceConfig{
+				BaseServiceConfig: &BaseServiceConfig{Name: "swagger"},
 			},
 		}
 	} else {

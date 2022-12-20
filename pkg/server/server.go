@@ -226,12 +226,14 @@ func (s *SSIServer) OperationAPI(service svcframework.Service) (err error) {
 }
 
 func (s *SSIServer) SwaggerUI(service svcframework.Service) (err error) {
+
 	swaggerRouter, err := router.NewSwaggerRouter(service)
 	if err != nil {
-		return util.LoggingErrorMsg(err, "creating operation router")
+		return util.LoggingErrorMsg(err, "creating swagger router")
 	}
 	handlerPath := V1Prefix + SwaggerPrefix
-	s.Handle(http.MethodGet, handlerPath, swaggerRouter.Serve)
+	s.Handle(http.MethodGet, path.Join(handlerPath, "/swagger.yaml"), swaggerRouter.ServeSpec)
+	s.Handle(http.MethodGet, path.Join(handlerPath, "/ui/*"), swaggerRouter.ServeUI)
 	return
 }
 
