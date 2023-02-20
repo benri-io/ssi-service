@@ -1,4 +1,4 @@
-module github.com/tbd54566975/ssi-service
+module github.com/TBD54566975/ssi-service
 
 go 1.19
 
