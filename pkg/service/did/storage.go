@@ -27,8 +27,9 @@ var (
 )
 
 type StoredDID struct {
-	ID  string          `json:"id"`
-	DID did.DIDDocument `json:"did"`
+	ID          string       `json:"id"`
+	DID         did.Document `json:"did"`
+	SoftDeleted bool         `json:"softDeleted"`
 }
 
 type Storage struct {
@@ -118,7 +119,7 @@ func getNamespaceForDID(id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	ns, err := getNamespaceForMethod(method)
+	ns, err := getNamespaceForMethod(method.String())
 	if err != nil {
 		return "", err
 	}

@@ -32,31 +32,25 @@ func (s Service) signManifestJWT(ctx context.Context, m CredentialManifestContai
 	return manifestToken, nil
 }
 
-func (s Service) verifyManifestJWT(token keyaccess.JWT) (*manifest.CredentialManifest, error) {
+func (s Service) verifyManifestJWT(ctx context.Context, token keyaccess.JWT) (*manifest.CredentialManifest, error) {
 	parsed, err := jwt.Parse([]byte(token))
 	if err != nil {
 		return nil, util.LoggingErrorMsg(err, "could not parse JWT")
 	}
+
 	claims := parsed.PrivateClaims()
 	claimsJSONBytes, err := json.Marshal(claims)
 	if err != nil {
 		return nil, util.LoggingErrorMsg(err, "could not marshal claims")
 	}
+
 	var parsedManifest CredentialManifestContainer
 	if err = json.Unmarshal(claimsJSONBytes, &parsedManifest); err != nil {
-		return nil, util.LoggingErrorMsg(err, "could not unmarshal claims into manifest")
+		return nil, util.LoggingErrorMsg(err, "unmarshalling claims into manifest")
 	}
-	issuer := parsedManifest.Manifest.Issuer.ID
-	kid, pubKey, err := didint.ResolveKeyForDID(s.didResolver, issuer)
-	if err != nil {
-		return nil, util.LoggingErrorMsgf(err, "failed to resolve manifest issuer's did: %s", issuer)
-	}
-	verifier, err := keyaccess.NewJWKKeyAccessVerifier(kid, pubKey)
-	if err != nil {
-		return nil, util.LoggingErrorMsg(err, "could not create manifest verifier")
-	}
-	if err = verifier.Verify(token); err != nil {
-		return nil, util.LoggingErrorMsg(err, "could not verify the manifest's signature")
+
+	if err = didint.VerifyTokenFromDID(ctx, s.didResolver, parsedManifest.Manifest.Issuer.ID, token); err != nil {
+		return nil, util.LoggingErrorMsg(err, "verifying manifest JWT")
 	}
 	return &parsedManifest.Manifest, nil
 }

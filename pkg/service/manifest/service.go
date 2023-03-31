@@ -12,6 +12,7 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+
 	"github.com/tbd54566975/ssi-service/config"
 	credint "github.com/tbd54566975/ssi-service/internal/credential"
 	"github.com/tbd54566975/ssi-service/internal/util"
@@ -35,7 +36,7 @@ type Service struct {
 
 	// external dependencies
 	keyStore    *keystore.Service
-	didResolver *didsdk.Resolver
+	didResolver didsdk.Resolver
 	credential  *credential.Service
 
 	Clock clock.Clock
@@ -72,13 +73,7 @@ func (s Service) Config() config.ManifestServiceConfig {
 	return s.config
 }
 
-func NewManifestService(
-	config config.ManifestServiceConfig,
-	s storage.ServiceStorage,
-	keyStore *keystore.Service,
-	didResolver *didsdk.Resolver,
-	credential *credential.Service,
-) (*Service, error) {
+func NewManifestService(config config.ManifestServiceConfig, s storage.ServiceStorage, keyStore *keystore.Service, didResolver didsdk.Resolver, credential *credential.Service) (*Service, error) {
 	manifestStorage, err := manifeststg.NewManifestStorage(s)
 	if err != nil {
 		return nil, util.LoggingErrorMsg(err, "could not instantiate storage for the manifest service")
@@ -109,7 +104,6 @@ type CredentialManifestContainer struct {
 }
 
 func (s Service) CreateManifest(ctx context.Context, request model.CreateManifestRequest) (*model.CreateManifestResponse, error) {
-
 	logrus.Debugf("creating manifest: %+v", request)
 
 	// validate the request
@@ -195,8 +189,8 @@ func (s Service) CreateManifest(ctx context.Context, request model.CreateManifes
 }
 
 // VerifyManifest verifies a manifest's signature and makes sure the manifest is compliant with the specification
-func (s Service) VerifyManifest(request model.VerifyManifestRequest) (*model.VerifyManifestResponse, error) {
-	m, err := s.verifyManifestJWT(request.ManifestJWT)
+func (s Service) VerifyManifest(ctx context.Context, request model.VerifyManifestRequest) (*model.VerifyManifestResponse, error) {
+	m, err := s.verifyManifestJWT(ctx, request.ManifestJWT)
 	if err != nil {
 		return &model.VerifyManifestResponse{
 			Verified: false,
@@ -205,14 +199,13 @@ func (s Service) VerifyManifest(request model.VerifyManifestRequest) (*model.Ver
 	}
 
 	// check the manifest is valid against its specification
-	if err := m.IsValid(); err != nil {
+	if err = m.IsValid(); err != nil {
 		return &model.VerifyManifestResponse{Verified: false, Reason: "manifest is not valid: " + err.Error()}, nil
 	}
 	return &model.VerifyManifestResponse{Verified: true}, nil
 }
 
 func (s Service) GetManifest(ctx context.Context, request model.GetManifestRequest) (*model.GetManifestResponse, error) {
-
 	logrus.Debugf("getting manifest: %s", request.ID)
 
 	gotManifest, err := s.storage.GetManifest(ctx, request.ID)
@@ -241,7 +234,6 @@ func (s Service) GetManifests(ctx context.Context) (*model.GetManifestsResponse,
 }
 
 func (s Service) DeleteManifest(ctx context.Context, request model.DeleteManifestRequest) error {
-
 	logrus.Debugf("deleting manifest: %s", request.ID)
 
 	if err := s.storage.DeleteManifest(ctx, request.ID); err != nil {
@@ -524,7 +516,6 @@ func (s Service) GetApplications(ctx context.Context) (*model.GetApplicationsRes
 }
 
 func (s Service) DeleteApplication(ctx context.Context, request model.DeleteApplicationRequest) error {
-
 	logrus.Debugf("deleting application: %s", request.ID)
 
 	if err := s.storage.DeleteApplication(ctx, request.ID); err != nil {
@@ -535,7 +526,6 @@ func (s Service) DeleteApplication(ctx context.Context, request model.DeleteAppl
 }
 
 func (s Service) GetResponse(ctx context.Context, request model.GetResponseRequest) (*model.GetResponseResponse, error) {
-
 	logrus.Debugf("getting response: %s", request.ID)
 
 	gotResponse, err := s.storage.GetResponse(ctx, request.ID)
@@ -552,7 +542,6 @@ func (s Service) GetResponse(ctx context.Context, request model.GetResponseReque
 }
 
 func (s Service) GetResponses(ctx context.Context) (*model.GetResponsesResponse, error) {
-
 	logrus.Debugf("getting response(s)")
 
 	gotResponses, err := s.storage.GetResponses(ctx)
@@ -570,7 +559,6 @@ func (s Service) GetResponses(ctx context.Context) (*model.GetResponsesResponse,
 }
 
 func (s Service) DeleteResponse(ctx context.Context, request model.DeleteResponseRequest) error {
-
 	logrus.Debugf("deleting response: %s", request.ID)
 
 	if err := s.storage.DeleteResponse(ctx, request.ID); err != nil {

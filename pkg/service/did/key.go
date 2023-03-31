@@ -13,7 +13,7 @@ import (
 	"github.com/tbd54566975/ssi-service/pkg/service/keystore"
 )
 
-func newKeyDIDHandler(s *Storage, ks *keystore.Service) MethodHandler {
+func NewKeyDIDHandler(s *Storage, ks *keystore.Service) MethodHandler {
 	return &keyDIDHandler{storage: s, keyStore: ks}
 }
 
@@ -23,7 +23,6 @@ type keyDIDHandler struct {
 }
 
 func (h *keyDIDHandler) CreateDID(ctx context.Context, request CreateDIDRequest) (*CreateDIDResponse, error) {
-
 	logrus.Debugf("creating DID: %+v", request)
 
 	// create the DID
@@ -41,8 +40,9 @@ func (h *keyDIDHandler) CreateDID(ctx context.Context, request CreateDIDRequest)
 	// store metadata in DID storage
 	id := doc.String()
 	storedDID := StoredDID{
-		ID:  id,
-		DID: *expanded,
+		ID:          id,
+		DID:         *expanded,
+		SoftDeleted: false,
 	}
 	if err = h.storage.StoreDID(ctx, storedDID); err != nil {
 		return nil, errors.Wrap(err, "could not store did:key value")
@@ -75,7 +75,6 @@ func (h *keyDIDHandler) CreateDID(ctx context.Context, request CreateDIDRequest)
 }
 
 func (h *keyDIDHandler) GetDID(ctx context.Context, request GetDIDRequest) (*GetDIDResponse, error) {
-
 	logrus.Debugf("getting DID: %+v", request)
 
 	id := request.ID
@@ -90,16 +89,34 @@ func (h *keyDIDHandler) GetDID(ctx context.Context, request GetDIDRequest) (*Get
 }
 
 func (h *keyDIDHandler) GetDIDs(ctx context.Context, method did.Method) (*GetDIDsResponse, error) {
-
 	logrus.Debugf("getting DIDs for method: %s", method)
 
 	gotDIDs, err := h.storage.GetDIDs(ctx, string(method))
 	if err != nil {
 		return nil, fmt.Errorf("error getting DIDs for method: %s", method)
 	}
-	dids := make([]did.DIDDocument, 0, len(gotDIDs))
+	dids := make([]did.Document, 0, len(gotDIDs))
 	for _, gotDID := range gotDIDs {
-		dids = append(dids, gotDID.DID)
+		if !gotDID.SoftDeleted {
+			dids = append(dids, gotDID.DID)
+		}
 	}
 	return &GetDIDsResponse{DIDs: dids}, nil
+}
+
+func (h *keyDIDHandler) SoftDeleteDID(ctx context.Context, request DeleteDIDRequest) error {
+	logrus.Debugf("soft deleting DID: %+v", request)
+
+	id := request.ID
+	gotStoredDID, err := h.storage.GetDID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("error getting DID: %s", id)
+	}
+	if gotStoredDID == nil {
+		return fmt.Errorf("did with id<%s> could not be found", id)
+	}
+
+	gotStoredDID.SoftDeleted = true
+
+	return h.storage.StoreDID(ctx, *gotStoredDID)
 }

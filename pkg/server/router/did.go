@@ -40,13 +40,13 @@ func NewDIDRouter(s svcframework.Service) (*DIDRouter, error) {
 }
 
 type GetDIDMethodsResponse struct {
-	DIDMethods []didsdk.Method `json:"methods,omitempty"`
+	DIDMethods []didsdk.Method `json:"method,omitempty"`
 }
 
 // GetDIDMethods godoc
 //
 // @Summary     Get DID Methods
-// @Description Get supported DID methods
+// @Description Get supported DID method
 // @Tags        DecentralizedIdentityAPI
 // @Accept      json
 // @Produce     json
@@ -59,20 +59,26 @@ func (dr DIDRouter) GetDIDMethods(ctx context.Context, w http.ResponseWriter, _ 
 }
 
 type CreateDIDByMethodRequest struct {
-	KeyType  crypto.KeyType `json:"keyType" validate:"required"`
-	DIDWebID string         `json:"didWebId"`
+	// Identifies the cryptographic algorithm family to use when generating this key.
+	// One of the following: `"Ed25519","X25519","secp256k1","P-224","P-256","P-384","P-521","RSA"`.
+	KeyType crypto.KeyType `json:"keyType" validate:"required"`
+
+	// Required when creating a DID with the `web` did method. E.g. `did:web:identity.foundation`.
+	DIDWebID string `json:"didWebId"`
 }
 
 type CreateDIDByMethodResponse struct {
-	DID              didsdk.DIDDocument `json:"did,omitempty"`
-	PrivateKeyBase58 string             `json:"privateKeyBase58,omitempty"`
-	KeyType          crypto.KeyType     `json:"keyType,omitempty"`
+	DID              didsdk.Document `json:"did,omitempty"`
+	PrivateKeyBase58 string          `json:"privateKeyBase58,omitempty"`
+	KeyType          crypto.KeyType  `json:"keyType,omitempty"`
 }
 
 // CreateDIDByMethod godoc
 //
-// @Summary     Create DID
-// @Description create DID by method
+// @Summary     Create DID Document
+// @Description Creates a DID document with the given method. The document created is stored internally and can be
+// @Description retrieved using the GetOperation. Method dependent registration (for example, DID web registration)
+// @Description is left up to the clients of this API.
 // @Tags        DecentralizedIdentityAPI
 // @Accept      json
 // @Produce     json
@@ -118,11 +124,12 @@ func (dr DIDRouter) CreateDIDByMethod(ctx context.Context, w http.ResponseWriter
 		PrivateKeyBase58: createDIDResponse.PrivateKeyBase58,
 		KeyType:          createDIDResponse.KeyType,
 	}
+
 	return framework.Respond(ctx, w, resp, http.StatusCreated)
 }
 
 type GetDIDByMethodResponse struct {
-	DID didsdk.DIDDocument `json:"did,omitempty"`
+	DID didsdk.Document `json:"did,omitempty"`
 }
 
 // GetDIDByMethod godoc
@@ -167,7 +174,13 @@ func (dr DIDRouter) GetDIDByMethod(ctx context.Context, w http.ResponseWriter, _
 }
 
 type GetDIDsByMethodResponse struct {
-	DIDs []didsdk.DIDDocument `json:"dids,omitempty"`
+	DIDs []didsdk.Document `json:"dids,omitempty"`
+}
+
+type GetDIDsRequest struct {
+	// A standard filter expression conforming to https://google.aip.dev/160.
+	// Not implemented yet.
+	Filter string `json:"filter"`
 }
 
 // GetDIDsByMethod godoc
@@ -177,10 +190,11 @@ type GetDIDsByMethodResponse struct {
 // @Tags        DecentralizedIdentityAPI
 // @Accept      json
 // @Produce     json
-// @Param       method path     string true "Method"
-// @Success     200    {object} GetDIDsByMethodResponse
-// @Failure     400    {string} string "Bad request"
-// @Router      /v1/dids/{method} [get]
+// @Param       request body     GetDIDsRequest true "request body"
+// @Success     200     {object} GetDIDsByMethodResponse
+// @Failure     400     {string} string "Bad request"
+// @Failure     500     {string} string "Internal server error"
+// @Router      /v1/dids [get]
 func (dr DIDRouter) GetDIDsByMethod(ctx context.Context, w http.ResponseWriter, _ *http.Request) error {
 	method := framework.GetParam(ctx, MethodParam)
 	if method == nil {
@@ -196,7 +210,7 @@ func (dr DIDRouter) GetDIDsByMethod(ctx context.Context, w http.ResponseWriter, 
 	if err != nil {
 		errMsg := fmt.Sprintf("could not get DIDs for method: %s", *method)
 		logrus.WithError(err).Error(errMsg)
-		return framework.NewRequestError(errors.Wrap(err, errMsg), http.StatusBadRequest)
+		return framework.NewRequestError(errors.Wrap(err, errMsg), http.StatusInternalServerError)
 	}
 
 	resp := GetDIDsByMethodResponse{DIDs: gotDIDs.DIDs}
@@ -204,9 +218,48 @@ func (dr DIDRouter) GetDIDsByMethod(ctx context.Context, w http.ResponseWriter, 
 }
 
 type ResolveDIDResponse struct {
-	ResolutionMetadata  *didsdk.DIDResolutionMetadata `json:"didResolutionMetadata,omitempty"`
-	DIDDocument         *didsdk.DIDDocument           `json:"didDocument"`
-	DIDDocumentMetadata *didsdk.DIDDocumentMetadata   `json:"didDocumentMetadata,omitempty"`
+	ResolutionMetadata  *didsdk.ResolutionMetadata `json:"didResolutionMetadata,omitempty"`
+	DIDDocument         *didsdk.Document           `json:"didDocument"`
+	DIDDocumentMetadata *didsdk.DocumentMetadata   `json:"didDocumentMetadata,omitempty"`
+}
+
+// SoftDeleteDIDByMethod godoc
+// @Description When this is called with the correct did method and id it will flip the softDelete flag to true for the db entry.
+// @Description A user can still get the did if they know the DID ID, and the did keys will still exist, but this did will not show up in the GetDIDsByMethod call
+// @Description This facilitates a clean SSI-Service Admin UI but not leave any hanging VCs with inaccessible hanging DIDs.
+// @Summary     Soft Delete DID
+// @Description Soft Deletes DID by method
+// @Tags        DecentralizedIdentityAPI
+// @Accept      json
+// @Produce     json
+// @Param       method  path     string                   true "Method"
+// @Param       id      path     string                   true "ID"
+// @Success     204     {string} string "No Content"
+// @Failure     400     {string} string "Bad request"
+// @Failure     500     {string} string "Internal server error"
+// @Router      /v1/dids/{method}/{id} [delete]
+func (dr DIDRouter) SoftDeleteDIDByMethod(ctx context.Context, w http.ResponseWriter, _ *http.Request) error {
+	method := framework.GetParam(ctx, MethodParam)
+	if method == nil {
+		errMsg := "soft delete DID by method request missing method parameter"
+		logrus.Error(errMsg)
+		return framework.NewRequestErrorMsg(errMsg, http.StatusBadRequest)
+	}
+	id := framework.GetParam(ctx, IDParam)
+	if id == nil {
+		errMsg := fmt.Sprintf("soft delete DID request missing id parameter for method: %s", *method)
+		logrus.Error(errMsg)
+		return framework.NewRequestErrorMsg(errMsg, http.StatusBadRequest)
+	}
+
+	deleteDIDRequest := did.DeleteDIDRequest{Method: didsdk.Method(*method), ID: *id}
+	if err := dr.service.SoftDeleteDIDByMethod(ctx, deleteDIDRequest); err != nil {
+		errMsg := fmt.Sprintf("could not soft delete DID with id: %s", *id)
+		logrus.WithError(err).Error(errMsg)
+		return framework.NewRequestError(errors.Wrap(err, errMsg), http.StatusInternalServerError)
+	}
+
+	return framework.Respond(ctx, w, nil, http.StatusNoContent)
 }
 
 // ResolveDID godoc
