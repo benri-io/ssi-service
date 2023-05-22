@@ -8,9 +8,10 @@ import (
 	manifestsdk "github.com/TBD54566975/ssi-sdk/credential/manifest"
 	"github.com/TBD54566975/ssi-sdk/crypto"
 	didsdk "github.com/TBD54566975/ssi-sdk/did"
+	"github.com/TBD54566975/ssi-sdk/did/key"
 	"github.com/google/uuid"
-	"github.com/mr-tron/base58"
 	"github.com/stretchr/testify/assert"
+
 	"github.com/tbd54566975/ssi-service/pkg/service/manifest/model"
 	"github.com/tbd54566975/ssi-service/pkg/service/operation/storage"
 
@@ -62,7 +63,12 @@ func TestManifestRouter(t *testing.T) {
 		assert.NoError(tt, err)
 		assert.NotEmpty(tt, issuerDID)
 
-		applicantDID, err := didService.CreateDIDByMethod(context.Background(), createDIDRequest)
+		applicantPrivKey, applicantDIDKey, err := key.GenerateDIDKey(crypto.Ed25519)
+		assert.NoError(tt, err)
+		assert.NotEmpty(tt, applicantPrivKey)
+		assert.NotEmpty(tt, applicantDIDKey)
+
+		applicantDID, err := applicantDIDKey.Expand()
 		assert.NoError(tt, err)
 		assert.NotEmpty(tt, applicantDID)
 
@@ -76,22 +82,24 @@ func TestManifestRouter(t *testing.T) {
 			},
 			"additionalProperties": true,
 		}
-		createdSchema, err := schemaService.CreateSchema(context.Background(), schema.CreateSchemaRequest{Author: issuerDID.DID.ID, Name: "license schema", Schema: licenseSchema, Sign: true})
+		kid := issuerDID.DID.VerificationMethod[0].ID
+		createdSchema, err := schemaService.CreateSchema(context.Background(), schema.CreateSchemaRequest{Author: issuerDID.DID.ID, AuthorKID: kid, Name: "license schema", Schema: licenseSchema, Sign: true})
 		assert.NoError(tt, err)
 		assert.NotEmpty(tt, createdSchema)
 
 		// issue a credential against the schema to the subject, from the issuer
 		createdCred, err := credentialService.CreateCredential(context.Background(), credential.CreateCredentialRequest{
-			Issuer:     issuerDID.DID.ID,
-			Subject:    applicantDID.DID.ID,
-			JSONSchema: createdSchema.ID,
-			Data:       map[string]any{"licenseType": "WA-DL-CLASS-A"},
+			Issuer:    issuerDID.DID.ID,
+			IssuerKID: kid,
+			Subject:   applicantDID.ID,
+			SchemaID:  createdSchema.ID,
+			Data:      map[string]any{"licenseType": "WA-DL-CLASS-A"},
 		})
 		assert.NoError(tt, err)
 		assert.NotEmpty(tt, createdCred)
 
 		// good manifest request, which asks for a single verifiable credential in the VC-JWT format
-		createManifestRequest := getValidManifestRequest(issuerDID.DID.ID, createdSchema.ID)
+		createManifestRequest := getValidManifestRequest(issuerDID.DID.ID, kid, createdSchema.ID)
 		createdManifest, err := manifestService.CreateManifest(context.Background(), createManifestRequest)
 		assert.NoError(tt, err)
 		assert.NotEmpty(tt, createdManifest)
@@ -112,17 +120,13 @@ func TestManifestRouter(t *testing.T) {
 		applicationRequest := getValidApplicationRequest(m.ID, m.PresentationDefinition.ID, m.PresentationDefinition.InputDescriptors[0].ID, containers)
 
 		// sign application
-		applicantPrivKeyBytes, err := base58.Decode(applicantDID.PrivateKeyBase58)
-		assert.NoError(tt, err)
-		applicantPrivKey, err := crypto.BytesToPrivKey(applicantPrivKeyBytes, applicantDID.KeyType)
-		assert.NoError(tt, err)
-		signer, err := keyaccess.NewJWKKeyAccess(applicantDID.DID.ID, applicantPrivKey)
+		signer, err := keyaccess.NewJWKKeyAccess(applicantDID.ID, applicantDID.VerificationMethod[0].ID, applicantPrivKey)
 		assert.NoError(tt, err)
 		signed, err := signer.SignJSON(applicationRequest)
 		assert.NoError(tt, err)
 
 		submitApplicationRequest := SubmitApplicationRequest{ApplicationJWT: *signed}
-		sar, err := submitApplicationRequest.ToServiceRequest()
+		sar, err := submitApplicationRequest.toServiceRequest()
 		assert.NoError(tt, err)
 		createdApplicationResponseOp, err := manifestService.ProcessApplicationSubmission(context.Background(), *sar)
 		assert.NoError(tt, err)
@@ -143,9 +147,10 @@ func TestManifestRouter(t *testing.T) {
 }
 
 // getValidManifestRequest returns a valid manifest request, expecting a single JWT-VC EdDSA credential
-func getValidManifestRequest(issuerDID, schemaID string) model.CreateManifestRequest {
+func getValidManifestRequest(issuerDID, issuerKID, schemaID string) model.CreateManifestRequest {
 	createManifestRequest := model.CreateManifestRequest{
 		IssuerDID: issuerDID,
+		IssuerKID: issuerKID,
 		ClaimFormat: &exchange.ClaimFormat{
 			JWTVC: &exchange.JWTType{Alg: []crypto.SignatureAlgorithm{crypto.EdDSA}},
 		},
@@ -157,7 +162,7 @@ func getValidManifestRequest(issuerDID, schemaID string) model.CreateManifestReq
 					Constraints: &exchange.Constraints{
 						Fields: []exchange.Field{
 							{
-								Path: []string{"$.credentialSubject.licenseType"},
+								Path: []string{"$.vc.credentialSubject.licenseType"},
 							},
 						},
 					},

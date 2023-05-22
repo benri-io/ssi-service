@@ -5,16 +5,17 @@ import (
 	"fmt"
 
 	"github.com/TBD54566975/ssi-sdk/credential/exchange"
+	sdkutil "github.com/TBD54566975/ssi-sdk/util"
 	"github.com/goccy/go-json"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"github.com/tbd54566975/ssi-service/internal/util"
+	"go.einride.tech/aip/filtering"
+
 	opstorage "github.com/tbd54566975/ssi-service/pkg/service/operation/storage"
 	"github.com/tbd54566975/ssi-service/pkg/service/operation/storage/namespace"
 	opsubmission "github.com/tbd54566975/ssi-service/pkg/service/operation/submission"
 	prestorage "github.com/tbd54566975/ssi-service/pkg/service/presentation/storage"
 	"github.com/tbd54566975/ssi-service/pkg/storage"
-	"go.einride.tech/aip/filtering"
 )
 
 const (
@@ -25,6 +26,7 @@ type StoredPresentation struct {
 	ID                     string                          `json:"id"`
 	PresentationDefinition exchange.PresentationDefinition `json:"presentationDefinition"`
 	Author                 string                          `json:"issuerID"`
+	AuthorKID              string                          `json:"issuerKid"`
 }
 
 type Storage struct {
@@ -121,21 +123,21 @@ func (ps *Storage) StorePresentation(ctx context.Context, presentation StoredPre
 func (ps *Storage) GetPresentation(ctx context.Context, id string) (*StoredPresentation, error) {
 	jsonBytes, err := ps.db.Read(ctx, presentationDefinitionNamespace, id)
 	if err != nil {
-		return nil, util.LoggingErrorMsgf(err, "could not get presentation definition: %s", id)
+		return nil, sdkutil.LoggingErrorMsgf(err, "could not get presentation definition: %s", id)
 	}
 	if len(jsonBytes) == 0 {
-		return nil, util.LoggingNewErrorf("presentation definition not found with id: %s", id)
+		return nil, sdkutil.LoggingNewErrorf("presentation definition not found with id: %s", id)
 	}
 	var stored StoredPresentation
 	if err := json.Unmarshal(jsonBytes, &stored); err != nil {
-		return nil, util.LoggingErrorMsgf(err, "could not unmarshal stored presentation definition: %s", id)
+		return nil, sdkutil.LoggingErrorMsgf(err, "could not unmarshal stored presentation definition: %s", id)
 	}
 	return &stored, nil
 }
 
 func (ps *Storage) DeletePresentation(ctx context.Context, id string) error {
 	if err := ps.db.Delete(ctx, presentationDefinitionNamespace, id); err != nil {
-		return util.LoggingNewErrorf("could not delete presentation definition: %s", id)
+		return sdkutil.LoggingNewErrorf("could not delete presentation definition: %s", id)
 	}
 	return nil
 }
@@ -143,7 +145,7 @@ func (ps *Storage) DeletePresentation(ctx context.Context, id string) error {
 func (ps *Storage) StoreSubmission(ctx context.Context, s prestorage.StoredSubmission) error {
 	sub, ok := s.VerifiablePresentation.PresentationSubmission.(exchange.PresentationSubmission)
 	if !ok {
-		return util.LoggingNewError("asserting that field is of type exchange.PresentationSubmission")
+		return sdkutil.LoggingNewError("asserting that field is of type exchange.PresentationSubmission")
 	}
 	id := sub.ID
 	if id == "" {
@@ -153,7 +155,7 @@ func (ps *Storage) StoreSubmission(ctx context.Context, s prestorage.StoredSubmi
 	}
 	jsonBytes, err := json.Marshal(s)
 	if err != nil {
-		return util.LoggingNewErrorf("could not store submission definition: %s", id)
+		return sdkutil.LoggingNewErrorf("could not store submission definition: %s", id)
 	}
 	return ps.db.Write(ctx, opsubmission.Namespace, id, jsonBytes)
 }
@@ -161,14 +163,14 @@ func (ps *Storage) StoreSubmission(ctx context.Context, s prestorage.StoredSubmi
 func (ps *Storage) GetSubmission(ctx context.Context, id string) (*prestorage.StoredSubmission, error) {
 	jsonBytes, err := ps.db.Read(ctx, opsubmission.Namespace, id)
 	if err != nil {
-		return nil, util.LoggingNewErrorf("could not get submission definition: %s", id)
+		return nil, sdkutil.LoggingNewErrorf("could not get submission definition: %s", id)
 	}
 	if len(jsonBytes) == 0 {
-		return nil, util.LoggingErrorMsgf(prestorage.ErrSubmissionNotFound, "reading submission with id: %s", id)
+		return nil, sdkutil.LoggingErrorMsgf(prestorage.ErrSubmissionNotFound, "reading submission with id: %s", id)
 	}
 	var stored prestorage.StoredSubmission
 	if err := json.Unmarshal(jsonBytes, &stored); err != nil {
-		return nil, util.LoggingErrorMsgf(err, "could not unmarshal stored submission definition: %s", id)
+		return nil, sdkutil.LoggingErrorMsgf(err, "could not unmarshal stored submission definition: %s", id)
 	}
 	return &stored, nil
 }

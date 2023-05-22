@@ -5,6 +5,7 @@ import (
 
 	"github.com/TBD54566975/ssi-sdk/crypto"
 	didsdk "github.com/TBD54566975/ssi-sdk/did"
+	"github.com/TBD54566975/ssi-sdk/did/resolution"
 )
 
 type GetSupportedMethodsResponse struct {
@@ -16,23 +17,25 @@ type ResolveDIDRequest struct {
 }
 
 type ResolveDIDResponse struct {
-	ResolutionMetadata  *didsdk.ResolutionMetadata `json:"didResolutionMetadata,omitempty"`
-	DIDDocument         *didsdk.Document           `json:"didDocument"`
-	DIDDocumentMetadata *didsdk.DocumentMetadata   `json:"didDocumentMetadata,omitempty"`
+	ResolutionMetadata  *resolution.ResolutionMetadata `json:"didResolutionMetadata,omitempty"`
+	DIDDocument         *didsdk.Document               `json:"didDocument"`
+	DIDDocumentMetadata *resolution.DocumentMetadata   `json:"didDocumentMetadata,omitempty"`
+}
+
+type CreateDIDRequestOptions interface {
+	Method() didsdk.Method
 }
 
 // CreateDIDRequest is the JSON-serializable request for creating a DID across DID method
 type CreateDIDRequest struct {
-	Method   didsdk.Method  `json:"method" validate:"required"`
-	KeyType  crypto.KeyType `validate:"required"`
-	DIDWebID string         `json:"didWebId"`
+	Method  didsdk.Method           `json:"method" validate:"required"`
+	KeyType crypto.KeyType          `validate:"required"`
+	Options CreateDIDRequestOptions `json:"options"`
 }
 
 // CreateDIDResponse is the JSON-serializable response for creating a DID
 type CreateDIDResponse struct {
-	DID              didsdk.Document `json:"did"`
-	PrivateKeyBase58 string          `json:"base58PrivateKey"`
-	KeyType          crypto.KeyType  `json:"keyType"`
+	DID didsdk.Document `json:"did"`
 }
 
 type GetDIDRequest struct {
@@ -56,7 +59,8 @@ type GetKeyFromDIDResponse struct {
 }
 
 type GetDIDsRequest struct {
-	Method didsdk.Method `json:"method" validate:"required"`
+	Method  didsdk.Method `json:"method" validate:"required"`
+	Deleted bool          `json:"deleted"`
 }
 
 // GetDIDsResponse is the JSON-serializable response for getting all DIDs for a given method

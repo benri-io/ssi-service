@@ -1,19 +1,26 @@
 package webhook
 
-import "net/url"
+import (
+	"encoding/json"
+	"net/url"
+)
 
 // In the context of webhooks, it's common to use noun.verb notation to describe events,
 // such as "credential.create" or "schema.delete".
-type Noun string
-type Verb string
+type (
+	Noun string
+	Verb string
+)
 
 // Supported Nouns
 const (
 	Credential   = Noun("Credential")
 	DID          = Noun("DID")
 	Manifest     = Noun("Manifest")
-	Schema       = Noun("Schema")
+	Schema       = Noun("SchemaID")
 	Presentation = Noun("Presentation")
+	Application  = Noun("Application")
+	Submission   = Noun("Submission")
 )
 
 // Supported Verbs
@@ -29,10 +36,10 @@ type Webhook struct {
 }
 
 type Payload struct {
-	Noun Noun   `json:"noun" validate:"required"`
-	Verb Verb   `json:"verb" validate:"required"`
-	URL  string `json:"url" validate:"required"`
-	Data any    `json:"data,omitempty"`
+	Noun Noun            `json:"noun" validate:"required"`
+	Verb Verb            `json:"verb" validate:"required"`
+	URL  string          `json:"url" validate:"required"`
+	Data json.RawMessage `json:"data,omitempty"`
 }
 
 type CreateWebhookRequest struct {
@@ -95,7 +102,7 @@ func (cwr CreateWebhookRequest) IsValid() bool {
 
 func (n Noun) IsValid() bool {
 	switch n {
-	case Credential, DID, Manifest, Schema, Presentation:
+	case Credential, DID, Manifest, Schema, Presentation, Application, Submission:
 		return true
 	}
 	return false
@@ -105,11 +112,12 @@ func (v Verb) isValid() bool {
 	switch v {
 	case Create, Delete:
 		return true
+	default:
+		return false
 	}
-	return false
 }
 
-// isValidURL checks if there were any errors during parsing and if the parsed URL has a non-empty Scheme and Host.
+// isValidURL checks if there were any errors during parsing and if the parsed DIDWebID has a non-empty Scheme and Host.
 // currently we support any scheme including http, https, ftp ...
 func isValidURL(urlStr string) bool {
 	parsedURL, err := url.Parse(urlStr)

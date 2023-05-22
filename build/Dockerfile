@@ -1,4 +1,4 @@
-FROM golang:1.20.2-alpine
+FROM golang:1.20.4-alpine
 
 # Create directory for our app inside the container
 WORKDIR /app
@@ -12,7 +12,6 @@ RUN go mod download
 COPY . ./
 
 # Build the binary and call it "docker-ssi-service"
-RUN ls -alt
 RUN go build -tags jwx_es256k -o /docker-ssi-service ./cmd/ssiservice
 
 EXPOSE 3000

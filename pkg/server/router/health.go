@@ -1,10 +1,11 @@
 package router
 
 import (
-	"context"
 	"net/http"
 
-	"github.com/goccy/go-json"
+	"github.com/gin-gonic/gin"
+
+	"github.com/tbd54566975/ssi-service/pkg/server/framework"
 )
 
 type GetHealthCheckResponse struct {
@@ -18,14 +19,14 @@ const (
 
 // Health godoc
 //
-// @Summary     Health Check
-// @Description Health is a simple handler that always responds with a 200 OK
-// @Tags        HealthCheck
-// @Accept      json
-// @Produce     json
-// @Success     200 {object} GetHealthCheckResponse
-// @Router      /health [get]
-func Health(_ context.Context, w http.ResponseWriter, _ *http.Request) error {
+//	@Summary		Health Check
+//	@Description	Health is a simple handler that always responds with a 200 OK
+//	@Tags			HealthCheck
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{object}	GetHealthCheckResponse
+//	@Router			/health [get]
+func Health(c *gin.Context) error {
 	status := GetHealthCheckResponse{Status: HealthOK}
-	return json.NewEncoder(w).Encode(status)
+	return framework.Respond(c, status, http.StatusOK)
 }

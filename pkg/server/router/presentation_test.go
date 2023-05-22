@@ -2,7 +2,6 @@ package router
 
 import (
 	"context"
-	gocrypto "crypto"
 	"testing"
 
 	"github.com/TBD54566975/ssi-sdk/credential/exchange"
@@ -11,6 +10,7 @@ import (
 	"github.com/mr-tron/base58"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"github.com/tbd54566975/ssi-service/config"
 	"github.com/tbd54566975/ssi-service/internal/keyaccess"
 	"github.com/tbd54566975/ssi-service/pkg/service/did"
@@ -34,14 +34,9 @@ func TestPresentationDefinitionRouter(t *testing.T) {
 	})
 }
 
-type Public interface {
-	Public() gocrypto.PublicKey
-}
-
 func TestPresentationDefinitionService(t *testing.T) {
-
 	s := setupTestDB(t)
-	assert.NotNil(t, s)
+	assert.NotEmpty(t, s)
 
 	keyStoreService := testKeyStoreService(t, s)
 	didService := testDIDService(t, s, keyStoreService)
@@ -51,11 +46,11 @@ func TestPresentationDefinitionService(t *testing.T) {
 		KeyType: crypto.Ed25519,
 	})
 	require.NoError(t, err)
-	privKeyBytes, err := base58.Decode(authorDID.PrivateKeyBase58)
+	pubKeyBytes, err := base58.Decode(authorDID.DID.VerificationMethod[0].PublicKeyBase58)
 	require.NoError(t, err)
-	privKey, err := crypto.BytesToPrivKey(privKeyBytes, authorDID.KeyType)
+	pubKey, err := crypto.BytesToPubKey(pubKeyBytes, crypto.Ed25519)
 	require.NoError(t, err)
-	ka, err := keyaccess.NewJWKKeyAccessVerifier(authorDID.DID.ID, privKey.(Public).Public())
+	ka, err := keyaccess.NewJWKKeyAccessVerifier(authorDID.DID.ID, authorDID.DID.ID, pubKey)
 	require.NoError(t, err)
 
 	service, err := presentation.NewPresentationService(config.PresentationServiceConfig{}, s, didService.GetResolver(), schemaService, keyStoreService)
@@ -63,7 +58,11 @@ func TestPresentationDefinitionService(t *testing.T) {
 
 	t.Run("Create returns the created definition", func(t *testing.T) {
 		pd := createPresentationDefinition(t)
-		created, err := service.CreatePresentationDefinition(context.Background(), model.CreatePresentationDefinitionRequest{PresentationDefinition: *pd, Author: authorDID.DID.ID})
+		created, err := service.CreatePresentationDefinition(context.Background(), model.CreatePresentationDefinitionRequest{
+			PresentationDefinition: *pd,
+			Author:                 authorDID.DID.ID,
+			AuthorKID:              authorDID.DID.VerificationMethod[0].ID,
+		})
 
 		assert.NoError(t, err)
 		assert.Equal(t, pd, &created.PresentationDefinition)
@@ -72,7 +71,11 @@ func TestPresentationDefinitionService(t *testing.T) {
 
 	t.Run("Get returns the created definition", func(t *testing.T) {
 		pd := createPresentationDefinition(t)
-		_, err := service.CreatePresentationDefinition(context.Background(), model.CreatePresentationDefinitionRequest{PresentationDefinition: *pd, Author: authorDID.DID.ID})
+		_, err := service.CreatePresentationDefinition(context.Background(), model.CreatePresentationDefinitionRequest{
+			PresentationDefinition: *pd,
+			Author:                 authorDID.DID.ID,
+			AuthorKID:              authorDID.DID.VerificationMethod[0].ID,
+		})
 		assert.NoError(t, err)
 
 		getPd, err := service.GetPresentationDefinition(context.Background(), model.GetPresentationDefinitionRequest{ID: pd.ID})
@@ -85,7 +88,11 @@ func TestPresentationDefinitionService(t *testing.T) {
 
 	t.Run("Get does not return after deletion", func(t *testing.T) {
 		pd := createPresentationDefinition(t)
-		_, err := service.CreatePresentationDefinition(context.Background(), model.CreatePresentationDefinitionRequest{PresentationDefinition: *pd, Author: authorDID.DID.ID})
+		_, err := service.CreatePresentationDefinition(context.Background(), model.CreatePresentationDefinitionRequest{
+			PresentationDefinition: *pd,
+			Author:                 authorDID.DID.ID,
+			AuthorKID:              authorDID.DID.VerificationMethod[0].ID,
+		})
 		assert.NoError(t, err)
 
 		assert.NoError(t, service.DeletePresentationDefinition(context.Background(), model.DeletePresentationDefinitionRequest{ID: pd.ID}))

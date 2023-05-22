@@ -8,10 +8,11 @@ import (
 	"os"
 	"path"
 
+	sdkutil "github.com/TBD54566975/ssi-sdk/util"
+	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 
 	"github.com/tbd54566975/ssi-service/config"
-	"github.com/tbd54566975/ssi-service/internal/util"
 	"github.com/tbd54566975/ssi-service/pkg/server/framework"
 	"github.com/tbd54566975/ssi-service/pkg/server/middleware"
 	"github.com/tbd54566975/ssi-service/pkg/server/router"
@@ -23,6 +24,7 @@ import (
 const (
 	HealthPrefix           = "/health"
 	ReadinessPrefix        = "/readiness"
+	SwaggerPrefix          = "/swagger/*any"
 	V1Prefix               = "/v1"
 	OperationPrefix        = "/operations"
 	DIDsPrefix             = "/dids"
@@ -44,24 +46,24 @@ const (
 
 // SSIServer exposes all dependencies needed to run a http server and all its services
 type SSIServer struct {
-	*framework.Server
 	*config.ServerConfig
 	*service.SSIService
+	*framework.Server
 }
 
 // NewSSIServer does two things: instantiates all service and registers their HTTP bindings
 func NewSSIServer(shutdown chan os.Signal, config config.SSIServiceConfig) (*SSIServer, error) {
 	// creates an HTTP server from the framework, and wrap it to extend it for the SSIS
-	middlewares := []framework.Middleware{
-		middleware.Logger(),
+	middlewares := gin.HandlersChain{
+		gin.Recovery(),
 		middleware.Errors(),
+		middleware.Logger(logrus.StandardLogger()),
 		middleware.Metrics(),
-		middleware.Panics(),
 	}
 	if config.Server.EnableAllowAllCORS {
-		middlewares = append(middlewares, middleware.Cors())
+		middlewares = append(middlewares, middleware.CORS())
 	}
-	httpServer := framework.NewHTTPServer(config.Server, shutdown, middlewares...)
+	httpServer := framework.NewHTTPServer(config.Server, shutdown, middlewares)
 	ssi, err := service.InstantiateSSIService(config.Services)
 	if err != nil {
 		return nil, err
@@ -76,6 +78,7 @@ func NewSSIServer(shutdown chan os.Signal, config config.SSIServiceConfig) (*SSI
 	// service-level routers
 	httpServer.Handle(http.MethodGet, HealthPrefix, router.Health)
 	httpServer.Handle(http.MethodGet, ReadinessPrefix, router.Readiness(services))
+	httpServer.Handle(http.MethodGet, SwaggerPrefix, router.Swagger)
 
 	// create the server instance to be returned
 	server := SSIServer{
@@ -87,9 +90,8 @@ func NewSSIServer(shutdown chan os.Signal, config config.SSIServiceConfig) (*SSI
 	// start all services and their routers
 	logrus.Infof("Starting [%d] service routers...\n", len(services))
 	for _, s := range services {
-		if err := server.instantiateRouter(s, webhookService); err != nil {
-			logrus.WithError(err).Fatalf("unable to instaniate service router<%s>", s.Type())
-			return nil, err
+		if err = server.instantiateRouter(s, webhookService); err != nil {
+			return nil, sdkutil.LoggingErrorMsgf(err, "unable to instantiate service router<%s>", s.Type())
 		}
 		logrus.Infof("Service router<%s> started successfully", s.Type())
 	}
@@ -111,9 +113,9 @@ func (s *SSIServer) instantiateRouter(service svcframework.Service, webhookServi
 	case svcframework.KeyStore:
 		return s.KeyStoreAPI(service)
 	case svcframework.Manifest:
-		return s.ManifestAPI(service)
+		return s.ManifestAPI(service, webhookService)
 	case svcframework.Presentation:
-		return s.PresentationAPI(service)
+		return s.PresentationAPI(service, webhookService)
 	case svcframework.Operation:
 		return s.OperationAPI(service)
 	case svcframework.Issuing:
@@ -129,7 +131,7 @@ func (s *SSIServer) instantiateRouter(service svcframework.Service, webhookServi
 func (s *SSIServer) DecentralizedIdentityAPI(service svcframework.Service, webhookService *webhook.Service) (err error) {
 	didRouter, err := router.NewDIDRouter(service)
 	if err != nil {
-		return util.LoggingErrorMsg(err, "could not create DID router")
+		return sdkutil.LoggingErrorMsg(err, "creating DID router")
 	}
 
 	handlerPath := V1Prefix + DIDsPrefix
@@ -144,11 +146,11 @@ func (s *SSIServer) DecentralizedIdentityAPI(service svcframework.Service, webho
 	return
 }
 
-// SchemaAPI registers all HTTP router for the Schema Service
+// SchemaAPI registers all HTTP router for the SchemaID Service
 func (s *SSIServer) SchemaAPI(service svcframework.Service, webhookService *webhook.Service) (err error) {
 	schemaRouter, err := router.NewSchemaRouter(service)
 	if err != nil {
-		return util.LoggingErrorMsg(err, "could not create schema router")
+		return sdkutil.LoggingErrorMsg(err, "creating schema router")
 	}
 
 	handlerPath := V1Prefix + SchemasPrefix
@@ -164,7 +166,7 @@ func (s *SSIServer) SchemaAPI(service svcframework.Service, webhookService *webh
 func (s *SSIServer) CredentialAPI(service svcframework.Service, webhookService *webhook.Service) (err error) {
 	credRouter, err := router.NewCredentialRouter(service)
 	if err != nil {
-		return util.LoggingErrorMsg(err, "could not create credential router")
+		return sdkutil.LoggingErrorMsg(err, "creating credential router")
 	}
 
 	credentialHandlerPath := V1Prefix + CredentialsPrefix
@@ -184,10 +186,10 @@ func (s *SSIServer) CredentialAPI(service svcframework.Service, webhookService *
 	return
 }
 
-func (s *SSIServer) PresentationAPI(service svcframework.Service) (err error) {
+func (s *SSIServer) PresentationAPI(service svcframework.Service, webhookService *webhook.Service) (err error) {
 	pRouter, err := router.NewPresentationRouter(service)
 	if err != nil {
-		return util.LoggingErrorMsg(err, "could not create credential router")
+		return sdkutil.LoggingErrorMsg(err, "creating credential router")
 	}
 
 	handlerPath := V1Prefix + PresentationsPrefix + DefinitionsPrefix
@@ -199,7 +201,7 @@ func (s *SSIServer) PresentationAPI(service svcframework.Service) (err error) {
 
 	submissionHandlerPath := V1Prefix + PresentationsPrefix + SubmissionsPrefix
 
-	s.Handle(http.MethodPut, submissionHandlerPath, pRouter.CreateSubmission)
+	s.Handle(http.MethodPut, submissionHandlerPath, pRouter.CreateSubmission, middleware.Webhook(webhookService, webhook.Submission, webhook.Create))
 	s.Handle(http.MethodGet, path.Join(submissionHandlerPath, "/:id"), pRouter.GetSubmission)
 	s.Handle(http.MethodGet, submissionHandlerPath, pRouter.ListSubmissions)
 	s.Handle(http.MethodPut, path.Join(submissionHandlerPath, "/:id", "/review"), pRouter.ReviewSubmission)
@@ -209,7 +211,7 @@ func (s *SSIServer) PresentationAPI(service svcframework.Service) (err error) {
 func (s *SSIServer) KeyStoreAPI(service svcframework.Service) (err error) {
 	keyStoreRouter, err := router.NewKeyStoreRouter(service)
 	if err != nil {
-		return util.LoggingErrorMsg(err, "could not create key store router")
+		return sdkutil.LoggingErrorMsg(err, "creating key store router")
 	}
 
 	handlerPath := V1Prefix + KeyStorePrefix
@@ -222,14 +224,13 @@ func (s *SSIServer) KeyStoreAPI(service svcframework.Service) (err error) {
 func (s *SSIServer) OperationAPI(service svcframework.Service) (err error) {
 	operationRouter, err := router.NewOperationRouter(service)
 	if err != nil {
-		return util.LoggingErrorMsg(err, "creating operation router")
+		return sdkutil.LoggingErrorMsg(err, "creating operation router")
 	}
 
 	handlerPath := V1Prefix + OperationPrefix
 
 	s.Handle(http.MethodGet, handlerPath, operationRouter.GetOperations)
-	// See https://github.com/dimfeld/httptreemux#routing-rules for details on how the `*` works.
-	// In this case, it's used so that the operation id matches `presentations/submissions/{submission_id}` for the URL
+	// In this case, it's used so that the operation id matches `presentations/submissions/{submission_id}` for the DIDWebID
 	// path	`/v1/operations/cancel/presentations/submissions/{id}`
 	s.Handle(http.MethodPut, path.Join(handlerPath, "/cancel/*id"), operationRouter.CancelOperation)
 	s.Handle(http.MethodGet, path.Join(handlerPath, "/*id"), operationRouter.GetOperation)
@@ -237,26 +238,26 @@ func (s *SSIServer) OperationAPI(service svcframework.Service) (err error) {
 	return
 }
 
-func (s *SSIServer) ManifestAPI(service svcframework.Service) (err error) {
+func (s *SSIServer) ManifestAPI(service svcframework.Service, webhookService *webhook.Service) (err error) {
 	manifestRouter, err := router.NewManifestRouter(service)
 	if err != nil {
-		return util.LoggingErrorMsg(err, "could not create manifest router")
+		return sdkutil.LoggingErrorMsg(err, "creating manifest router")
 	}
 
 	manifestHandlerPath := V1Prefix + ManifestsPrefix
 	applicationsHandlerPath := V1Prefix + ManifestsPrefix + ApplicationsPrefix
 	responsesHandlerPath := V1Prefix + ManifestsPrefix + ResponsesPrefix
 
-	s.Handle(http.MethodPut, manifestHandlerPath, manifestRouter.CreateManifest)
+	s.Handle(http.MethodPut, manifestHandlerPath, manifestRouter.CreateManifest, middleware.Webhook(webhookService, webhook.Manifest, webhook.Create))
 
 	s.Handle(http.MethodGet, manifestHandlerPath, manifestRouter.GetManifests)
 	s.Handle(http.MethodGet, path.Join(manifestHandlerPath, "/:id"), manifestRouter.GetManifest)
-	s.Handle(http.MethodDelete, path.Join(manifestHandlerPath, "/:id"), manifestRouter.DeleteManifest)
+	s.Handle(http.MethodDelete, path.Join(manifestHandlerPath, "/:id"), manifestRouter.DeleteManifest, middleware.Webhook(webhookService, webhook.Manifest, webhook.Delete))
 
-	s.Handle(http.MethodPut, applicationsHandlerPath, manifestRouter.SubmitApplication)
+	s.Handle(http.MethodPut, applicationsHandlerPath, manifestRouter.SubmitApplication, middleware.Webhook(webhookService, webhook.Application, webhook.Create))
 	s.Handle(http.MethodGet, applicationsHandlerPath, manifestRouter.GetApplications)
 	s.Handle(http.MethodGet, path.Join(applicationsHandlerPath, "/:id"), manifestRouter.GetApplication)
-	s.Handle(http.MethodDelete, path.Join(applicationsHandlerPath, "/:id"), manifestRouter.DeleteApplication)
+	s.Handle(http.MethodDelete, path.Join(applicationsHandlerPath, "/:id"), manifestRouter.DeleteApplication, middleware.Webhook(webhookService, webhook.Application, webhook.Delete))
 	s.Handle(http.MethodPut, path.Join(applicationsHandlerPath, "/:id", "/review"), manifestRouter.ReviewApplication)
 
 	s.Handle(http.MethodGet, responsesHandlerPath, manifestRouter.GetResponses)
@@ -268,7 +269,7 @@ func (s *SSIServer) ManifestAPI(service svcframework.Service) (err error) {
 func (s *SSIServer) IssuanceAPI(service svcframework.Service) error {
 	issuanceRouter, err := router.NewIssuanceRouter(service)
 	if err != nil {
-		return util.LoggingErrorMsg(err, "could not create issuance router")
+		return sdkutil.LoggingErrorMsg(err, "creating issuance router")
 	}
 
 	issuanceHandlerPath := V1Prefix + IssuanceTemplatePrefix
@@ -282,7 +283,7 @@ func (s *SSIServer) IssuanceAPI(service svcframework.Service) error {
 func (s *SSIServer) WebhookAPI(service svcframework.Service) (err error) {
 	webhookRouter, err := router.NewWebhookRouter(service)
 	if err != nil {
-		return util.LoggingErrorMsg(err, "could not create webhook router")
+		return sdkutil.LoggingErrorMsg(err, "creating webhook router")
 	}
 
 	handlerPath := V1Prefix + WebhookPrefix

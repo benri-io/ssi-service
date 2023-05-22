@@ -14,6 +14,7 @@ import (
 	"github.com/lestrrat-go/jwx/jwt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"github.com/tbd54566975/ssi-service/config"
 	"github.com/tbd54566975/ssi-service/internal/keyaccess"
 	"github.com/tbd54566975/ssi-service/pkg/service/did"
@@ -44,7 +45,8 @@ func TestWellKnownGenerationTest(t *testing.T) {
 
 		createWellKnownDIDConfiguration(tt, didKey, gotKey, origin)
 
-		didWeb, err := didService.CreateDIDByMethod(context.Background(), did.CreateDIDRequest{Method: "web", DIDWebID: "did:web:tbd.website", KeyType: "Ed25519"})
+		createOpts := did.CreateWebDIDOptions{DIDWebID: "did:web:tbd.website"}
+		didWeb, err := didService.CreateDIDByMethod(context.Background(), did.CreateDIDRequest{Method: "web", KeyType: "Ed25519", Options: createOpts})
 		assert.NoError(tt, err)
 		assert.NotEmpty(tt, didWeb)
 
@@ -90,7 +92,7 @@ func createWellKnownDIDConfiguration(tt *testing.T, didResponse *did.CreateDIDRe
 	cred, err := builder.Build()
 	assert.NoError(tt, err)
 
-	keyAccess, err := keyaccess.NewJWKKeyAccess(gotKey.ID, gotKey.Key)
+	keyAccess, err := keyaccess.NewJWKKeyAccess(gotKey.Controller, gotKey.ID, gotKey.Key)
 	assert.NoError(tt, err)
 
 	jwtToken := jwt.New()
@@ -131,7 +133,7 @@ func createWellKnownDIDConfiguration(tt *testing.T, didResponse *did.CreateDIDRe
 
 	// TODO: Remove typ header
 	// option := jwt.WithJwsHeaders()
-	signedTokenBytes, err := jwt.Sign(jwtToken, jwa.SignatureAlgorithm(keyAccess.JWTSigner.GetSigningAlgorithm()), keyAccess.JWTSigner.Key)
+	signedTokenBytes, err := jwt.Sign(jwtToken, jwa.SignatureAlgorithm(keyAccess.Signer.ALG), keyAccess.Signer.PrivateKey)
 	assert.NoError(tt, err)
 
 	credToken := keyaccess.JWT(signedTokenBytes).Ptr()
@@ -146,15 +148,12 @@ func createWellKnownDIDConfiguration(tt *testing.T, didResponse *did.CreateDIDRe
 	fmt.Println("Created Well Known Output for DID:")
 	fmt.Println(didResponse.DID.ID)
 
-	fmt.Println("DID Private Key:")
-	fmt.Println(didResponse.PrivateKeyBase58)
-
 	fmt.Println("Well Known Config:")
 	fmt.Println(string(jsonStr))
 }
 
 func testKeyStoreService(t *testing.T, db storage.ServiceStorage) *keystore.Service {
-	serviceConfig := config.KeyStoreServiceConfig{ServiceKeyPassword: "test-password"}
+	serviceConfig := config.KeyStoreServiceConfig{MasterKeyPassword: "test-password"}
 	// create a keystore service
 	keystoreService, err := keystore.NewKeyStoreService(serviceConfig, db)
 	require.NoError(t, err)
@@ -167,8 +166,8 @@ func testDIDService(t *testing.T, db storage.ServiceStorage, keyStore *keystore.
 		BaseServiceConfig: &config.BaseServiceConfig{
 			Name: "did",
 		},
-		Methods:           []string{"key", "web"},
-		ResolutionMethods: []string{"key"},
+		Methods:                []string{"key", "web"},
+		LocalResolutionMethods: []string{"key"},
 	}
 	// create a did service
 	didService, err := did.NewDIDService(serviceConfig, db, keyStore)
@@ -183,7 +182,10 @@ func setupTestDB(t *testing.T) storage.ServiceStorage {
 	name := file.Name()
 	err = file.Close()
 	require.NoError(t, err)
-	s, err := storage.NewStorage(storage.Bolt, name)
+	s, err := storage.NewStorage(storage.Bolt, storage.Option{
+		ID:     storage.BoltDBFilePathOption,
+		Option: name,
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = s.Close()

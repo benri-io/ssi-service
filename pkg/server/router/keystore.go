@@ -1,14 +1,13 @@
 package router
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 
 	"github.com/TBD54566975/ssi-sdk/crypto"
+	"github.com/gin-gonic/gin"
 	"github.com/mr-tron/base58"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 
 	"github.com/tbd54566975/ssi-service/pkg/server/framework"
 	svcframework "github.com/tbd54566975/ssi-service/pkg/service/framework"
@@ -37,7 +36,7 @@ type StoreKeyRequest struct {
 	ID string `json:"id" validate:"required"`
 
 	// Identifies the cryptographic algorithm family used with the key.
-	// One of the following: `"Ed25519","X25519","secp256k1","P-224","P-256","P-384","P-521","RSA"`.
+	// One of the following: "Ed25519", "X25519", "secp256k1", "P-224", "P-256", "P-384", "P-521", "RSA".
 	Type crypto.KeyType `json:"type,omitempty" validate:"required"`
 
 	// See https://www.w3.org/TR/did-core/#did-controller
@@ -66,38 +65,35 @@ func (sk StoreKeyRequest) ToServiceRequest() (*keystore.StoreKeyRequest, error) 
 
 // StoreKey godoc
 //
-// @Summary     Store Key
-// @Description Stores a key to be used by the service
-// @Tags        KeyStoreAPI
-// @Accept      json
-// @Produce     json
-// @Param       request body StoreKeyRequest true "request body"
-// @Success     201
-// @Failure     400 {string} string "Bad request"
-// @Failure     500 {string} string "Internal server error"
-// @Router      /v1/keys [put]
-func (ksr *KeyStoreRouter) StoreKey(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+//	@Summary		Store Key
+//	@Description	Stores a key to be used by the service
+//	@Tags			KeyStoreAPI
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body	StoreKeyRequest	true	"request body"
+//	@Success		201
+//	@Failure		400	{string}	string	"Bad request"
+//	@Failure		500	{string}	string	"Internal server error"
+//	@Router			/v1/keys [put]
+func (ksr *KeyStoreRouter) StoreKey(c *gin.Context) error {
 	var request StoreKeyRequest
-	if err := framework.Decode(r, &request); err != nil {
+	if err := framework.Decode(c.Request, &request); err != nil {
 		errMsg := "invalid store key request"
-		logrus.WithError(err).Error(errMsg)
-		return framework.NewRequestError(errors.Wrap(err, errMsg), http.StatusBadRequest)
+		return framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusBadRequest)
 	}
 
 	req, err := request.ToServiceRequest()
 	if err != nil {
 		errMsg := "could not process store key request"
-		logrus.WithError(err).Error(errMsg)
-		return framework.NewRequestError(errors.Wrap(err, errMsg), http.StatusBadRequest)
+		return framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusBadRequest)
 	}
 
-	if err := ksr.service.StoreKey(ctx, *req); err != nil {
+	if err = ksr.service.StoreKey(c, *req); err != nil {
 		errMsg := fmt.Sprintf("could not store key: %s, %s", request.ID, err.Error())
-		logrus.WithError(err).Error(errMsg)
-		return framework.NewRequestError(errors.Wrap(err, errMsg), http.StatusInternalServerError)
+		return framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusInternalServerError)
 	}
 
-	return framework.Respond(ctx, w, nil, http.StatusCreated)
+	return framework.Respond(c, nil, http.StatusCreated)
 }
 
 type GetKeyDetailsResponse struct {
@@ -109,28 +105,26 @@ type GetKeyDetailsResponse struct {
 
 // GetKeyDetails godoc
 //
-// @Summary     Get Details For Key
-// @Description Get details about a stored key
-// @Tags        KeyStoreAPI
-// @Accept      json
-// @Produce     json
-// @Param       id  path     string true "ID of the key to get"
-// @Success     200 {object} GetKeyDetailsResponse
-// @Failure     400 {string} string "Bad request"
-// @Router      /v1/keys/{id} [get]
-func (ksr *KeyStoreRouter) GetKeyDetails(ctx context.Context, w http.ResponseWriter, _ *http.Request) error {
-	id := framework.GetParam(ctx, IDParam)
+//	@Summary		Get Details For Key
+//	@Description	Get details about a stored key
+//	@Tags			KeyStoreAPI
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path		string	true	"ID of the key to get"
+//	@Success		200	{object}	GetKeyDetailsResponse
+//	@Failure		400	{string}	string	"Bad request"
+//	@Router			/v1/keys/{id} [get]
+func (ksr *KeyStoreRouter) GetKeyDetails(c *gin.Context) error {
+	id := framework.GetParam(c, IDParam)
 	if id == nil {
 		errMsg := "cannot get key details without ID parameter"
-		logrus.Error(errMsg)
-		return framework.NewRequestErrorMsg(errMsg, http.StatusBadRequest)
+		return framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
 	}
 
-	gotKeyDetails, err := ksr.service.GetKeyDetails(ctx, keystore.GetKeyDetailsRequest{ID: *id})
+	gotKeyDetails, err := ksr.service.GetKeyDetails(c, keystore.GetKeyDetailsRequest{ID: *id})
 	if err != nil {
 		errMsg := fmt.Sprintf("could not get key details for id: %s", *id)
-		logrus.WithError(err).Error(errMsg)
-		return framework.NewRequestError(errors.Wrap(err, errMsg), http.StatusBadRequest)
+		return framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusBadRequest)
 	}
 
 	resp := GetKeyDetailsResponse{
@@ -139,36 +133,34 @@ func (ksr *KeyStoreRouter) GetKeyDetails(ctx context.Context, w http.ResponseWri
 		Controller: gotKeyDetails.Controller,
 		CreatedAt:  gotKeyDetails.CreatedAt,
 	}
-	return framework.Respond(ctx, w, resp, http.StatusOK)
+	return framework.Respond(c, resp, http.StatusOK)
 }
 
 // RevokeKey godoc
 //
-// @Summary     Revoke Key
-// @Description Marks the stored key as being revoked, along with the timestamps of when it was revoked. NB: the key can still be used for signing. This will likely be addressed before v1 is released.
-// @Tags        KeyStoreAPI
-// @Accept      json
-// @Produce     json
-// @Param       id path string true "ID of the key to revoke"
-// @Success     200
-// @Failure     400 {string} string "Bad request"
-// @Failure     500 {string} string "Internal server error"
-// @Router      /v1/keys/{id} [delete]
-func (ksr *KeyStoreRouter) RevokeKey(ctx context.Context, w http.ResponseWriter, _ *http.Request) error {
-	id := framework.GetParam(ctx, IDParam)
+//	@Summary		Revoke Key
+//	@Description	Marks the stored key as being revoked, along with the timestamps of when it was revoked. NB: the key can still be used for signing. This will likely be addressed before v1 is released.
+//	@Tags			KeyStoreAPI
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path	string	true	"ID of the key to revoke"
+//	@Success		200
+//	@Failure		400	{string}	string	"Bad request"
+//	@Failure		500	{string}	string	"Internal server error"
+//	@Router			/v1/keys/{id} [delete]
+func (ksr *KeyStoreRouter) RevokeKey(c *gin.Context) error {
+	id := framework.GetParam(c, IDParam)
 	if id == nil {
 		errMsg := "cannot delete key without ID parameter"
-		logrus.Error(errMsg)
-		return framework.NewRequestErrorMsg(errMsg, http.StatusBadRequest)
+		return framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
 	}
 
-	err := ksr.service.RevokeKey(ctx, keystore.RevokeKeyRequest{ID: *id})
+	err := ksr.service.RevokeKey(c, keystore.RevokeKeyRequest{ID: *id})
 	if err != nil {
 		errMsg := fmt.Sprintf("could not delete key for id: %s", *id)
-		logrus.WithError(err).Error(errMsg)
-		return framework.NewRequestError(errors.Wrap(err, errMsg), http.StatusInternalServerError)
+		return framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusInternalServerError)
 	}
 
 	var resp GetKeyDetailsResponse
-	return framework.Respond(ctx, w, resp, http.StatusOK)
+	return framework.Respond(c, resp, http.StatusOK)
 }

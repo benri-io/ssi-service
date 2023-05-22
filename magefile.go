@@ -53,7 +53,7 @@ func installGoVulnIfNotPresent() error {
 // Clean deletes any build artifacts.
 func Clean() {
 	fmt.Println("Cleaning...")
-	os.RemoveAll("bin")
+	_ = os.RemoveAll("bin")
 }
 
 // CleanRun removes Docker container, network, and image artifacts.
@@ -99,29 +99,31 @@ func CITest() error {
 	return runCITests()
 }
 
-// Test runs unit tests without coverage.
-// The mage `-v` option will trigger a verbose output of the test
+// Integration runs integration tests.
 func Integration() error {
 	return runIntegrationTests()
 }
 
 // Spec generates an OpenAPI spec yaml based on code annotations.
-func Spec() error {
+func Spec(fmt bool) error {
 	swagCommand := "swag"
-	if err := installIfNotPresent(swagCommand, "github.com/swaggo/swag/cmd/swag@v1.8.7"); err != nil {
-		logrus.Fatal(err)
+	if err := installIfNotPresent(swagCommand, "github.com/swaggo/swag/v2/cmd/swag@v2.0.0-rc3"); err != nil {
+		logrus.WithError(err).Error("failed to install swag")
 		return err
 	}
-	if err := sh.Run(swagCommand, "fmt", "-d", "pkg/server/router"); err != nil {
-		logrus.Fatal(err)
-		return err
+
+	if fmt {
+		if err := sh.Run(swagCommand, "fmt", "-d", "pkg/server/router"); err != nil {
+			logrus.WithError(err).Error("failed to format swagger docs")
+			return err
+		}
 	}
 	// One of the dependencies we have (antlr4) does not play nicely with swaggo, but we need to enable dependencies
 	// because many of our external API objects have ssi-sdk objects. We can work around this by setting depth. You can
 	// see a discussion of this topic in https://github.com/swaggo/swag/issues/948.
 	// We also set parseGoList because it's the only way parseDepth works until the following is fixed:
 	// https://github.com/swaggo/swag/issues/1269
-	return sh.Run(swagCommand, "init", "-g", "cmd/ssiservice/main.go", "--pd", "-o", "doc", "-ot", "yaml", "--parseDepth=3", "--parseGoList=false")
+	return sh.Run(swagCommand, "init", "-g", "cmd/ssiservice/main.go", "--pd", "-o", "doc", "-ot", "go,yaml", "--parseInternal")
 }
 
 func runCITests(extraTestArgs ...string) error {
@@ -189,7 +191,7 @@ func ColorizeTestOutput(w io.Writer) io.Writer {
 }
 
 func ColorizeTestStdout() io.Writer {
-	stdout := int(syscall.Stdout)
+	stdout := syscall.Stdout
 	if terminal.IsTerminal(stdout) {
 		return ColorizeTestOutput(os.Stdout)
 	}
@@ -219,7 +221,7 @@ func runGo(cmd string, args ...string) error {
 	return sh.Run(findOnPathOrGoPath("go"), append([]string{"run", cmd}, args...)...)
 }
 
-// InstallIfNotPresent installs a go based tool (if not already installed)
+// InstallIfNotPresent installs a go based tool (if not already installed).
 func installIfNotPresent(execName, goPackage string) error {
 	usr, err := user.Current()
 	if err != nil {
@@ -300,8 +302,8 @@ func goPath() string {
 	return goPath
 }
 
-// CBT runs clean; build; test.
-func CBT() error {
+// CBLT runs clean; build; lint; test.
+func CBLT() error {
 	Clean()
 	if err := Build(); err != nil {
 		return err

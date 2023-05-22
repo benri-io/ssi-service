@@ -5,6 +5,7 @@ import (
 
 	"github.com/TBD54566975/ssi-sdk/credential/exchange"
 	manifestsdk "github.com/TBD54566975/ssi-sdk/credential/manifest"
+
 	cred "github.com/tbd54566975/ssi-service/internal/credential"
 	"github.com/tbd54566975/ssi-service/internal/keyaccess"
 	"github.com/tbd54566975/ssi-service/pkg/service/manifest/storage"
@@ -16,6 +17,7 @@ type CreateManifestRequest struct {
 	Name                   *string                          `json:"name,omitempty"`
 	Description            *string                          `json:"description,omitempty"`
 	IssuerDID              string                           `json:"issuerDid" validate:"required"`
+	IssuerKID              string                           `json:"issuerKid" validate:"required"`
 	IssuerName             *string                          `json:"issuerName,omitempty"`
 	OutputDescriptors      []manifestsdk.OutputDescriptor   `json:"outputDescriptors" validate:"required,dive"`
 	ClaimFormat            *exchange.ClaimFormat            `json:"format" validate:"required,dive"`
@@ -93,8 +95,10 @@ type DeleteApplicationRequest struct {
 type ReviewApplicationRequest struct {
 	// ID of the application.
 	ID       string `json:"id" validate:"required"`
-	Approved bool   `json:"approved"`
-	Reason   string `json:"reason"`
+	Approved bool   `json:"approved" validate:"required"`
+	// Reason is only used upon denial
+	Reason string `json:"reason"`
+	// TODO(gabe) add a way to specify which input descriptors resulted in the failure
 
 	CredentialOverrides map[string]CredentialOverride `json:"credential_overrides,omitempty"`
 }

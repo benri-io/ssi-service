@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +10,8 @@ import (
 	"time"
 
 	"github.com/TBD54566975/ssi-sdk/credential/exchange"
+	"github.com/gin-gonic/gin"
+
 	"github.com/tbd54566975/ssi-service/pkg/service/issuing"
 	"github.com/tbd54566975/ssi-service/pkg/service/manifest/model"
 	"github.com/tbd54566975/ssi-service/pkg/service/webhook"
@@ -18,11 +19,11 @@ import (
 
 	manifestsdk "github.com/TBD54566975/ssi-sdk/credential/manifest"
 	"github.com/TBD54566975/ssi-sdk/crypto"
-	"github.com/dimfeld/httptreemux/v5"
 	"github.com/goccy/go-json"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	credmodel "github.com/tbd54566975/ssi-service/internal/credential"
 
 	"github.com/tbd54566975/ssi-service/config"
@@ -35,6 +36,10 @@ import (
 	"github.com/tbd54566975/ssi-service/pkg/service/manifest"
 	"github.com/tbd54566975/ssi-service/pkg/service/schema"
 	"github.com/tbd54566975/ssi-service/pkg/storage"
+)
+
+const (
+	testIONResolverURL = "https://test-ion-resolver.com"
 )
 
 func TestMain(t *testing.M) {
@@ -53,7 +58,8 @@ func TestHealthCheckAPI(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "https://ssi-service.com/health", nil)
 	w := httptest.NewRecorder()
 
-	err = router.Health(context.TODO(), w, req)
+	c := newRequestContext(w, req)
+	err = router.Health(c)
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
 
@@ -74,7 +80,12 @@ func TestReadinessAPI(t *testing.T) {
 	shutdown := make(chan os.Signal, 1)
 	serviceConfig, err := config.LoadConfig("")
 	assert.NoError(t, err)
-	serviceConfig.Services.StorageOption = dbFile
+	serviceConfig.Services.StorageOptions = []storage.Option{
+		{
+			ID:     storage.BoltDBFilePathOption,
+			Option: dbFile,
+		},
+	}
 
 	server, err := NewSSIServer(shutdown, *serviceConfig)
 	assert.NoError(t, err)
@@ -84,7 +95,8 @@ func TestReadinessAPI(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	handler := router.Readiness(nil)
-	err = handler(newRequestContext(), w, req)
+	c := newRequestContext(w, req)
+	err = handler(c)
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
 
@@ -104,27 +116,31 @@ func newRequestValue(t *testing.T, data any) io.Reader {
 }
 
 // construct a context value as expected by our handler
-func newRequestContext() context.Context {
-	return context.WithValue(context.Background(), framework.KeyRequestState, &framework.RequestState{
+func newRequestContext(w http.ResponseWriter, req *http.Request) *gin.Context {
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Set(framework.KeyRequestState.String(), &framework.RequestState{
 		TraceID:    uuid.New().String(),
 		Now:        time.Now(),
 		StatusCode: 1,
 	})
+	return c
 }
 
-// as required by https://github.com/dimfeld/httptreemux's context handler
-func newRequestContextWithParams(params map[string]string) context.Context {
-	ctx := context.WithValue(context.Background(), framework.KeyRequestState, &framework.RequestState{
-		TraceID:    uuid.New().String(),
-		Now:        time.Now(),
-		StatusCode: 1,
-	})
-	return httptreemux.AddParamsToContext(ctx, params)
+// construct a context value with query params as expected by our handler
+func newRequestContextWithParams(w http.ResponseWriter, req *http.Request, params map[string]string) *gin.Context {
+	c := newRequestContext(w, req)
+	c.Params = make([]gin.Param, 0, len(params))
+	for k, v := range params {
+		c.Params = append(c.Params, gin.Param{Key: k, Value: v})
+	}
+	return c
 }
 
-func getValidManifestRequest(issuerDID, schemaID string) model.CreateManifestRequest {
-	createManifestRequest := model.CreateManifestRequest{
+func getValidManifestRequest(issuerDID, issuerKID, schemaID string) model.CreateManifestRequest {
+	return model.CreateManifestRequest{
 		IssuerDID: issuerDID,
+		IssuerKID: issuerKID,
 		ClaimFormat: &exchange.ClaimFormat{
 			JWTVC: &exchange.JWTType{Alg: []crypto.SignatureAlgorithm{crypto.EdDSA}},
 		},
@@ -136,7 +152,7 @@ func getValidManifestRequest(issuerDID, schemaID string) model.CreateManifestReq
 					Constraints: &exchange.Constraints{
 						Fields: []exchange.Field{
 							{
-								Path: []string{"$.credentialSubject.licenseType"},
+								Path: []string{"$.vc.credentialSubject.licenseType"},
 							},
 						},
 					},
@@ -158,8 +174,6 @@ func getValidManifestRequest(issuerDID, schemaID string) model.CreateManifestReq
 			},
 		},
 	}
-
-	return createManifestRequest
 }
 
 func getValidApplicationRequest(manifestID, presDefID, submissionDescriptorID string, credentials []credmodel.Container) manifestsdk.CredentialApplicationWrapper {
@@ -203,8 +217,8 @@ func testKeyStore(t *testing.T, bolt storage.ServiceStorage) (*router.KeyStoreRo
 
 func testKeyStoreService(t *testing.T, db storage.ServiceStorage) *keystore.Service {
 	serviceConfig := config.KeyStoreServiceConfig{
-		BaseServiceConfig:  &config.BaseServiceConfig{Name: "test-keystore"},
-		ServiceKeyPassword: "test-password",
+		BaseServiceConfig: &config.BaseServiceConfig{Name: "test-keystore"},
+		MasterKeyPassword: "test-password",
 	}
 
 	// create a keystore service
@@ -225,11 +239,15 @@ func testIssuanceService(t *testing.T, db storage.ServiceStorage) *issuing.Servi
 	return s
 }
 
-func testDIDService(t *testing.T, bolt storage.ServiceStorage, keyStore *keystore.Service) *did.Service {
+func testDIDService(t *testing.T, bolt storage.ServiceStorage, keyStore *keystore.Service, methods ...string) *did.Service {
+	if methods == nil {
+		methods = []string{"key"}
+	}
 	serviceConfig := config.DIDServiceConfig{
-		BaseServiceConfig: &config.BaseServiceConfig{Name: "test-did"},
-		Methods:           []string{"key"},
-		ResolutionMethods: []string{"key"},
+		BaseServiceConfig:      &config.BaseServiceConfig{Name: "test-did"},
+		Methods:                methods,
+		LocalResolutionMethods: []string{"key", "web", "peer", "pkh"},
+		IONResolverURL:         testIONResolverURL,
 	}
 
 	// create a did service
@@ -239,8 +257,8 @@ func testDIDService(t *testing.T, bolt storage.ServiceStorage, keyStore *keystor
 	return didService
 }
 
-func testDIDRouter(t *testing.T, bolt storage.ServiceStorage, keyStore *keystore.Service) *router.DIDRouter {
-	didService := testDIDService(t, bolt, keyStore)
+func testDIDRouter(t *testing.T, bolt storage.ServiceStorage, keyStore *keystore.Service, methods []string) *router.DIDRouter {
+	didService := testDIDService(t, bolt, keyStore, methods...)
 
 	// create router for service
 	didRouter, err := router.NewDIDRouter(didService)
@@ -305,6 +323,7 @@ func testManifest(t *testing.T, db storage.ServiceStorage, keyStore *keystore.Se
 func testWebhookService(t *testing.T, bolt storage.ServiceStorage) *webhook.Service {
 	serviceConfig := config.WebhookServiceConfig{
 		BaseServiceConfig: &config.BaseServiceConfig{Name: "webhook"},
+		WebhookTimeout:    "10s",
 	}
 
 	// create a webhook service

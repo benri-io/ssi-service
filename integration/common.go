@@ -2,6 +2,7 @@ package integration
 
 import (
 	"bytes"
+	gocrypto "crypto"
 	"embed"
 	"fmt"
 	"io"
@@ -10,18 +11,19 @@ import (
 	"time"
 
 	manifestsdk "github.com/TBD54566975/ssi-sdk/credential/manifest"
-	"github.com/TBD54566975/ssi-sdk/crypto"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/goccy/go-json"
-	"github.com/mr-tron/base58"
 	"github.com/oliveagle/jsonpath"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+
 	credmodel "github.com/tbd54566975/ssi-service/internal/credential"
 	"github.com/tbd54566975/ssi-service/internal/keyaccess"
+	"github.com/tbd54566975/ssi-service/pkg/server/router"
 )
 
 const (
+	// Note: for local testing change this to port 3000
 	endpoint       = "http://localhost:8080/"
 	version        = "v1/"
 	MaxElapsedTime = 120 * time.Second
@@ -32,6 +34,13 @@ var (
 	testVectors embed.FS
 	client      = new(http.Client)
 )
+
+func init() {
+	// Treats "\n" as new lines, see https://github.com/sirupsen/logrus/issues/608
+	logrus.SetFormatter(&logrus.TextFormatter{
+		DisableQuote: true,
+	})
+}
 
 func CreateDIDKey() (string, error) {
 	logrus.Println("\n\nCreate a did for the issuer:")
@@ -45,7 +54,29 @@ func CreateDIDKey() (string, error) {
 
 func CreateDIDWeb() (string, error) {
 	logrus.Println("\n\nCreate a did:web")
-	output, err := put(endpoint+version+"dids/web", getJSONFromFile("did-web-input.json"))
+
+	var createDIDWebRequest router.CreateDIDByMethodRequest
+	inputJSON := getJSONFromFile("did-web-input.json")
+	if err := json.Unmarshal([]byte(inputJSON), &createDIDWebRequest); err != nil {
+		return "", errors.Wrap(err, "unmarshalling did:web request")
+	}
+
+	createdRequestJSONBytes, err := json.Marshal(createDIDWebRequest)
+	if err != nil {
+		return "", errors.Wrap(err, "creating did:web request")
+	}
+
+	output, err := put(endpoint+version+"dids/web", string(createdRequestJSONBytes))
+	if err != nil {
+		return "", errors.Wrapf(err, "did endpoint with output: %s", output)
+	}
+
+	return output, nil
+}
+
+func CreateDIDION() (string, error) {
+	logrus.Println("\n\nCreate a did:ion")
+	output, err := put(endpoint+version+"dids/ion", getJSONFromFile("did-ion-input.json"))
 	if err != nil {
 		return "", errors.Wrapf(err, "did endpoint with output: %s", output)
 	}
@@ -75,6 +106,7 @@ func CreateKYCSchema() (string, error) {
 
 type credInputParams struct {
 	IssuerID  string
+	IssuerKID string
 	SchemaID  string
 	SubjectID string
 }
@@ -103,7 +135,7 @@ func CreateVerifiableCredential(credentialInput credInputParams, revocable bool)
 	err = backoff.Retry(func() error {
 		output, err = put(endpoint+version+"credentials", credentialJSON)
 		if err != nil {
-			logrus.WithError(err).Warn("retryable error caught, retrying..")
+			logrus.WithError(err).Debug("retryable error caught, retrying..")
 			return err
 		}
 		return nil
@@ -142,13 +174,14 @@ func resolveTemplate(input any, fileName string) (string, error) {
 	if err = t.Execute(&b, input); err != nil {
 		return "", err
 	}
-	credentialJSON := b.String()
-	return credentialJSON, nil
+	templateJSON := b.String()
+	return templateJSON, nil
 }
 
 type credManifestParams struct {
-	IssuerID string
-	SchemaID string
+	IssuerID  string
+	IssuerKID string
+	SchemaID  string
 }
 
 func CreateCredentialManifest(credManifest credManifestParams) (string, error) {
@@ -170,24 +203,14 @@ type credApplicationParams struct {
 	ManifestID   string
 }
 
-func CreateCredentialApplicationJWT(credApplication credApplicationParams, credentialJWT, aliceDID, aliceDIDPrivateKey string) (string, error) {
+func CreateCredentialApplicationJWT(credApplication credApplicationParams, credentialJWT, aliceDID, aliceKID string, aliceDIDPrivateKey gocrypto.PrivateKey) (string, error) {
 	logrus.Println("\n\nCreate an Application JWT:")
 	applicationJSON, err := resolveTemplate(credApplication, "application-input.json")
 	if err != nil {
 		return "", err
 	}
 
-	alicePrivKeyBytes, err := base58.Decode(aliceDIDPrivateKey)
-	if err != nil {
-		return "", errors.Wrap(err, "base58 decoding")
-	}
-
-	alicePrivKey, err := crypto.BytesToPrivKey(alicePrivKeyBytes, crypto.Ed25519)
-	if err != nil {
-		return "", errors.Wrap(err, "bytes to priv key")
-	}
-
-	signer, err := keyaccess.NewJWKKeyAccess(aliceDID, alicePrivKey)
+	signer, err := keyaccess.NewJWKKeyAccess(aliceDID, aliceKID, aliceDIDPrivateKey)
 	if err != nil {
 		return "", errors.Wrap(err, "creating signer")
 	}
@@ -203,7 +226,8 @@ func CreateCredentialApplicationJWT(credApplication credApplicationParams, crede
 }
 
 type definitionParams struct {
-	Author string
+	Author    string
+	AuthorKID string
 }
 
 func CreatePresentationDefinition(params definitionParams) (string, error) {
@@ -233,6 +257,7 @@ func ReviewSubmission(id string) (string, error) {
 
 type submissionParams struct {
 	HolderID      string
+	HolderKID     string
 	DefinitionID  string
 	CredentialJWT string
 	SubmissionID  string
@@ -242,30 +267,20 @@ type submissionJWTParams struct {
 	SubmissionJWT string
 }
 
-func CreateSubmission(params submissionParams, holderPrivateKey string) (string, error) {
+func CreateSubmission(params submissionParams, holderPrivateKey gocrypto.PrivateKey) (string, error) {
 	logrus.Println("\n\nCreate our Submission:")
 	submissionJSON, err := resolveTemplate(params, "presentation-submission-input.json")
 	if err != nil {
 		return "", err
 	}
 
-	pkBytes, err := base58.Decode(holderPrivateKey)
-	if err != nil {
-		return "", errors.Wrap(err, "base58 decoding")
-	}
-
-	pkCrypto, err := crypto.BytesToPrivKey(pkBytes, crypto.Ed25519)
-	if err != nil {
-		return "", errors.Wrap(err, "bytes to priv key")
-	}
-
-	signer, err := keyaccess.NewJWKKeyAccess(params.HolderID, pkCrypto)
+	signer, err := keyaccess.NewJWKKeyAccess(params.HolderID, params.HolderKID, holderPrivateKey)
 	if err != nil {
 		return "", errors.Wrap(err, "creating signer")
 	}
 
 	var submission any
-	if err := json.Unmarshal([]byte(submissionJSON), &submission); err != nil {
+	if err = json.Unmarshal([]byte(submissionJSON), &submission); err != nil {
 		return "", err
 	}
 
@@ -275,8 +290,7 @@ func CreateSubmission(params submissionParams, holderPrivateKey string) (string,
 		return "", errors.Wrap(err, "signing json")
 	}
 
-	submissionJSONWrapper, err := resolveTemplate(
-		submissionJWTParams{SubmissionJWT: signed.String()},
+	submissionJSONWrapper, err := resolveTemplate(submissionJWTParams{SubmissionJWT: signed.String()},
 		"presentation-submission-input-jwt.json")
 	if err != nil {
 		return "", err
@@ -372,7 +386,7 @@ func get(url string) (string, error) {
 }
 
 func put(url string, json string) (string, error) {
-	logrus.Println(fmt.Sprintf("\nPerforming PUT request to:  %s \n\nwith data: \n%s\n", url, compactJSONOutput(json)))
+	logrus.Printf("\nPerforming PUT request to:  %s \n\nwith data: \n%s\n", url, json)
 
 	req, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer([]byte(json)))
 	if err != nil {
@@ -391,14 +405,15 @@ func put(url string, json string) (string, error) {
 		return "", errors.Wrap(err, "parsing body")
 	}
 
+	bodyStr := string(body)
 	if !is2xxResponse(resp.StatusCode) {
-		return "", fmt.Errorf("status code %v not in the 200s. body: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("status code %v not in the 200s. body: %s", resp.StatusCode, bodyStr)
 	}
 
 	logrus.Println("\nOutput:")
-	logrus.Println(string(body))
+	logrus.Println(bodyStr)
 
-	return string(body), err
+	return bodyStr, err
 }
 
 func getJSONFromFile(fileName string) string {
@@ -455,6 +470,7 @@ type issuanceTemplateParams struct {
 	SchemaID   string
 	ManifestID string
 	IssuerID   string
+	IssuerKID  string
 }
 
 func CreateIssuanceTemplate(params issuanceTemplateParams) (string, error) {

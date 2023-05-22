@@ -4,16 +4,17 @@ import (
 	"context"
 	"strings"
 
+	sdkutil "github.com/TBD54566975/ssi-sdk/util"
 	"github.com/goccy/go-json"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"github.com/tbd54566975/ssi-service/internal/util"
+	"go.einride.tech/aip/filtering"
+
 	"github.com/tbd54566975/ssi-service/pkg/service/operation/credential"
 	opstorage "github.com/tbd54566975/ssi-service/pkg/service/operation/storage"
 	"github.com/tbd54566975/ssi-service/pkg/service/operation/storage/namespace"
 	"github.com/tbd54566975/ssi-service/pkg/service/operation/submission"
 	"github.com/tbd54566975/ssi-service/pkg/storage"
-	"go.einride.tech/aip/filtering"
 )
 
 const (
@@ -24,12 +25,12 @@ type Storage struct {
 	db storage.ServiceStorage
 }
 
-func (b Storage) CancelOperation(ctx context.Context, id string) (*opstorage.StoredOperation, error) {
+func (s Storage) CancelOperation(ctx context.Context, id string) (*opstorage.StoredOperation, error) {
 	var opData []byte
 	var err error
 	switch {
 	case strings.HasPrefix(id, submission.ParentResource):
-		_, opData, err = b.db.UpdateValueAndOperation(
+		_, opData, err = s.db.UpdateValueAndOperation(
 			ctx,
 			submission.Namespace, opstorage.StatusObjectID(id), storage.NewUpdater(map[string]any{
 				"status": submission.StatusCancelled,
@@ -41,7 +42,7 @@ func (b Storage) CancelOperation(ctx context.Context, id string) (*opstorage.Sto
 				}),
 			})
 	case strings.HasPrefix(id, credential.ParentResource):
-		_, opData, err = b.db.UpdateValueAndOperation(
+		_, opData, err = s.db.UpdateValueAndOperation(
 			ctx,
 			credential.ApplicationNamespace, opstorage.StatusObjectID(id), storage.NewUpdater(map[string]any{
 				"status": credential.StatusCancelled,
@@ -67,40 +68,41 @@ func (b Storage) CancelOperation(ctx context.Context, id string) (*opstorage.Sto
 	return &op, nil
 }
 
-func (b Storage) StoreOperation(ctx context.Context, op opstorage.StoredOperation) error {
+func (s Storage) StoreOperation(ctx context.Context, op opstorage.StoredOperation) error {
 	id := op.ID
 	if id == "" {
-		return util.LoggingNewError("ID is required for storing operations")
+		return sdkutil.LoggingNewError("ID is required for storing operations")
 	}
 	jsonBytes, err := json.Marshal(op)
 	if err != nil {
-		return util.LoggingErrorMsgf(err, "marshalling operation with id: %s", id)
+		return sdkutil.LoggingErrorMsgf(err, "marshalling operation with id: %s", id)
 	}
-	if err = b.db.Write(ctx, namespace.FromID(id), id, jsonBytes); err != nil {
-		return util.LoggingErrorMsg(err, "writing to db")
+	if err = s.db.Write(ctx, namespace.FromID(id), id, jsonBytes); err != nil {
+		return sdkutil.LoggingErrorMsg(err, "writing to db")
 	}
 	return nil
 }
 
-func (b Storage) GetOperation(ctx context.Context, id string) (opstorage.StoredOperation, error) {
+func (s Storage) GetOperation(ctx context.Context, id string) (opstorage.StoredOperation, error) {
 	var stored opstorage.StoredOperation
-	jsonBytes, err := b.db.Read(ctx, namespace.FromID(id), id)
+	operationID := namespace.FromID(id)
+	jsonBytes, err := s.db.Read(ctx, operationID, id)
 	if err != nil {
-		return stored, util.LoggingErrorMsgf(err, "reading operation with id: %s", id)
+		return stored, sdkutil.LoggingErrorMsgf(err, "reading operation with id: %s", id)
 	}
 	if len(jsonBytes) == 0 {
-		return stored, util.LoggingNewErrorf("operation not found with id: %s", id)
+		return stored, sdkutil.LoggingNewErrorf("operation not found with id: %s", id)
 	}
 	if err := json.Unmarshal(jsonBytes, &stored); err != nil {
-		return stored, util.LoggingErrorMsgf(err, "unmarshalling stored operation: %s", id)
+		return stored, sdkutil.LoggingErrorMsgf(err, "unmarshalling stored operation: %s", id)
 	}
 	return stored, nil
 }
 
-func (b Storage) GetOperations(ctx context.Context, parent string, filter filtering.Filter) ([]opstorage.StoredOperation, error) {
-	operations, err := b.db.ReadAll(ctx, namespace.FromParent(parent))
+func (s Storage) GetOperations(ctx context.Context, parent string, filter filtering.Filter) ([]opstorage.StoredOperation, error) {
+	operations, err := s.db.ReadAll(ctx, namespace.FromParent(parent))
 	if err != nil {
-		return nil, util.LoggingErrorMsgf(err, "could not get all operations")
+		return nil, sdkutil.LoggingErrorMsgf(err, "could not get all operations")
 	}
 
 	shouldInclude, err := storage.NewIncludeFunc(filter)
@@ -122,9 +124,9 @@ func (b Storage) GetOperations(ctx context.Context, parent string, filter filter
 	return stored, nil
 }
 
-func (b Storage) DeleteOperation(ctx context.Context, id string) error {
-	if err := b.db.Delete(ctx, namespace.FromID(id), id); err != nil {
-		return util.LoggingErrorMsgf(err, "deleting operation: %s", id)
+func (s Storage) DeleteOperation(ctx context.Context, id string) error {
+	if err := s.db.Delete(ctx, namespace.FromID(id), id); err != nil {
+		return sdkutil.LoggingErrorMsgf(err, "deleting operation: %s", id)
 	}
 	return nil
 }

@@ -5,12 +5,11 @@ import (
 	"fmt"
 
 	didsdk "github.com/TBD54566975/ssi-sdk/did"
+	didresolution "github.com/TBD54566975/ssi-sdk/did/resolution"
 	sdkutil "github.com/TBD54566975/ssi-sdk/util"
 	"github.com/pkg/errors"
 
 	"github.com/tbd54566975/ssi-service/config"
-	"github.com/tbd54566975/ssi-service/internal/did"
-	"github.com/tbd54566975/ssi-service/internal/util"
 	"github.com/tbd54566975/ssi-service/pkg/service/did/resolution"
 	"github.com/tbd54566975/ssi-service/pkg/service/framework"
 	"github.com/tbd54566975/ssi-service/pkg/service/keystore"
@@ -63,7 +62,7 @@ func (s *Service) Config() config.DIDServiceConfig {
 	return s.config
 }
 
-func (s *Service) GetResolver() didsdk.Resolver {
+func (s *Service) GetResolver() didresolution.Resolver {
 	return s.resolver
 }
 
@@ -74,6 +73,7 @@ func NewDIDService(config config.DIDServiceConfig, s storage.ServiceStorage, key
 	}
 
 	service := Service{
+		config:   config,
 		storage:  didStorage,
 		handlers: make(map[didsdk.Method]MethodHandler),
 		keyStore: keyStore,
@@ -93,7 +93,7 @@ func NewDIDService(config config.DIDServiceConfig, s storage.ServiceStorage, key
 	}
 
 	// instantiate DID resolver
-	resolver, err := resolution.NewServiceResolver(hr, config.ResolutionMethods, config.UniversalResolverURL)
+	resolver, err := resolution.NewServiceResolver(hr, config.LocalResolutionMethods, config.UniversalResolverURL)
 	if err != nil {
 		return nil, errors.Wrap(err, "instantiating DID resolver")
 	}
@@ -105,21 +105,37 @@ func NewDIDService(config config.DIDServiceConfig, s storage.ServiceStorage, key
 	return &service, nil
 }
 
+// instantiateHandlerForMethod instantiates a handler for the given DID method. All handlers supported by the DID
+// service must be instantiated here.
 func (s *Service) instantiateHandlerForMethod(method didsdk.Method) error {
 	switch method {
 	case didsdk.KeyMethod:
-		s.handlers[method] = NewKeyDIDHandler(s.storage, s.keyStore)
+		kh, err := NewKeyHandler(s.storage, s.keyStore)
+		if err != nil {
+			return errors.Wrap(err, "instantiating key handler")
+		}
+		s.handlers[method] = kh
 	case didsdk.WebMethod:
-		s.handlers[method] = NewWebDIDHandler(s.storage, s.keyStore)
+		wh, err := NewWebHandler(s.storage, s.keyStore)
+		if err != nil {
+			return errors.Wrap(err, "instantiating web handler")
+		}
+		s.handlers[method] = wh
+	case didsdk.IONMethod:
+		ih, err := NewIONHandler(s.Config().IONResolverURL, s.storage, s.keyStore)
+		if err != nil {
+			return errors.Wrap(err, "instantiating ion handler")
+		}
+		s.handlers[method] = ih
 	default:
-		return util.LoggingNewErrorf("unsupported DID method: %s", method)
+		return sdkutil.LoggingNewErrorf("unsupported DID method: %s", method)
 	}
 	return nil
 }
 
 func (s *Service) ResolveDID(request ResolveDIDRequest) (*ResolveDIDResponse, error) {
 	if request.DID == "" {
-		return nil, util.LoggingNewError("cannot resolve empty DID")
+		return nil, sdkutil.LoggingNewError("cannot resolve empty DID")
 	}
 	resolved, err := s.Resolve(context.Background(), request.DID)
 	if err != nil {
@@ -132,7 +148,7 @@ func (s *Service) ResolveDID(request ResolveDIDRequest) (*ResolveDIDResponse, er
 	}, nil
 }
 
-func (s *Service) Resolve(ctx context.Context, did string, opts ...didsdk.ResolutionOption) (*didsdk.ResolutionResult, error) {
+func (s *Service) Resolve(ctx context.Context, did string, opts ...didresolution.ResolutionOption) (*didresolution.ResolutionResult, error) {
 	return s.resolver.Resolve(ctx, did, opts)
 }
 
@@ -147,7 +163,7 @@ func (s *Service) GetSupportedMethods() GetSupportedMethodsResponse {
 func (s *Service) CreateDIDByMethod(ctx context.Context, request CreateDIDRequest) (*CreateDIDResponse, error) {
 	handler, err := s.getHandler(request.Method)
 	if err != nil {
-		return nil, util.LoggingErrorMsgf(err, "could not get handler for method<%s>", request.Method)
+		return nil, sdkutil.LoggingErrorMsgf(err, "could not get handler for method<%s>", request.Method)
 	}
 	return handler.CreateDID(ctx, request)
 }
@@ -155,7 +171,7 @@ func (s *Service) CreateDIDByMethod(ctx context.Context, request CreateDIDReques
 func (s *Service) GetDIDByMethod(ctx context.Context, request GetDIDRequest) (*GetDIDResponse, error) {
 	handler, err := s.getHandler(request.Method)
 	if err != nil {
-		return nil, util.LoggingErrorMsgf(err, "could not get handler for method<%s>", request.Method)
+		return nil, sdkutil.LoggingErrorMsgf(err, "could not get handler for method<%s>", request.Method)
 	}
 	return handler.GetDID(ctx, request)
 }
@@ -163,34 +179,36 @@ func (s *Service) GetDIDByMethod(ctx context.Context, request GetDIDRequest) (*G
 func (s *Service) GetKeyFromDID(ctx context.Context, request GetKeyFromDIDRequest) (*GetKeyFromDIDResponse, error) {
 	resolved, err := s.Resolve(ctx, request.ID)
 	if err != nil {
-		return nil, util.LoggingErrorMsgf(err, "resolving DID<%s>", request.ID)
+		return nil, sdkutil.LoggingErrorMsgf(err, "resolving DID<%s>", request.ID)
 	}
 
 	// next, get the verification information (key) from the did document
-	kid, pubKey, err := did.GetVerificationInformation(resolved.Document, request.KeyID)
+	pubKey, err := didsdk.GetKeyFromVerificationMethod(resolved.Document, request.KeyID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "getting verification information from the did document: %s", request.ID)
 	}
 
 	return &GetKeyFromDIDResponse{
-		KeyID:     kid,
+		KeyID:     request.KeyID,
 		PublicKey: pubKey,
 	}, nil
 }
 
 func (s *Service) GetDIDsByMethod(ctx context.Context, request GetDIDsRequest) (*GetDIDsResponse, error) {
-	method := request.Method
-	handler, err := s.getHandler(method)
+	handler, err := s.getHandler(request.Method)
 	if err != nil {
-		return nil, util.LoggingErrorMsgf(err, "could not get handler for method<%s>", method)
+		return nil, sdkutil.LoggingErrorMsgf(err, "could not get handler for method<%s>", request.Method)
 	}
-	return handler.GetDIDs(ctx, method)
+	if request.Deleted {
+		return handler.GetDeletedDIDs(ctx)
+	}
+	return handler.GetDIDs(ctx)
 }
 
 func (s *Service) SoftDeleteDIDByMethod(ctx context.Context, request DeleteDIDRequest) error {
 	handler, err := s.getHandler(request.Method)
 	if err != nil {
-		return util.LoggingErrorMsgf(err, "could not get handler for method<%s>", request.Method)
+		return sdkutil.LoggingErrorMsgf(err, "could not get handler for method<%s>", request.Method)
 	}
 	return handler.SoftDeleteDID(ctx, request)
 }
@@ -198,7 +216,7 @@ func (s *Service) SoftDeleteDIDByMethod(ctx context.Context, request DeleteDIDRe
 func (s *Service) getHandler(method didsdk.Method) (MethodHandler, error) {
 	handler, ok := s.handlers[method]
 	if !ok {
-		return nil, util.LoggingNewErrorf("could not get handler for DID method: %s", method)
+		return nil, sdkutil.LoggingNewErrorf("could not get handler for DID method: %s", method)
 	}
 	return handler, nil
 }

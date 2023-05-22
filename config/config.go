@@ -12,22 +12,36 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+
+	"github.com/tbd54566975/ssi-service/pkg/storage"
 )
 
 const (
-	DefaultConfigPath = "config/config.toml"
+	DefaultConfigPath = "config/dev.toml"
 	DefaultEnvPath    = "config/.env"
-	ConfigFileName    = "config.toml"
+	Filename          = "dev.toml"
 	ServiceName       = "ssi-service"
-	ConfigExtension   = ".toml"
+	Extension         = ".toml"
 
 	DefaultServiceEndpoint = "http://localhost:8080"
 
+	EnvironmentDev  Environment = "dev"
+	EnvironmentTest Environment = "test"
+	EnvironmentProd Environment = "prod"
+
+	ConfigPath       EnvironmentVariable = "CONFIG_PATH"
 	KeystorePassword EnvironmentVariable = "KEYSTORE_PASSWORD"
 	DBPassword       EnvironmentVariable = "DB_PASSWORD"
 )
 
-type EnvironmentVariable string
+type (
+	Environment         string
+	EnvironmentVariable string
+)
+
+func (e EnvironmentVariable) String() string {
+	return string(e)
+}
 
 type SSIServiceConfig struct {
 	conf.Version
@@ -37,6 +51,7 @@ type SSIServiceConfig struct {
 
 // ServerConfig represents configurable properties for the HTTP server
 type ServerConfig struct {
+	Environment         Environment   `toml:"env" conf:"default:dev"`
 	APIHost             string        `toml:"api_host" conf:"default:0.0.0.0:3000"`
 	DebugHost           string        `toml:"debug_host" conf:"default:0.0.0.0:4000"`
 	JagerHost           string        `toml:"jager_host" conf:"http://jaeger:14268/api/traces"`
@@ -66,9 +81,9 @@ type ServicesConfig struct {
 	// at present, it is assumed that a single storage provider works for all services
 	// in the future it may make sense to have per-service storage providers (e.g. mysql for one service,
 	// mongo for another)
-	StorageProvider string      `toml:"storage"`
-	StorageOption   interface{} `toml:"storage_option"`
-	ServiceEndpoint string      `toml:"service_endpoint"`
+	StorageProvider string           `toml:"storage"`
+	StorageOptions  []storage.Option `toml:"storage_option"`
+	ServiceEndpoint string           `toml:"service_endpoint"`
 
 	// Embed all service-specific configs here. The order matters: from which should be instantiated first, to last
 	KeyStoreConfig       KeyStoreServiceConfig     `toml:"keystore,omitempty"`
@@ -90,9 +105,17 @@ type BaseServiceConfig struct {
 
 type KeyStoreServiceConfig struct {
 	*BaseServiceConfig
-	// Service key password. Used by a KDF whose key is used by a symmetric cypher for key encryption.
+	// Master key password. Used by a KDF whose key is used by a symmetric cypher for key encryption.
 	// The password is salted before usage.
-	ServiceKeyPassword string `toml:"password"`
+	// Note that this field is only used when MasterKeyURI is empty.
+	MasterKeyPassword string `toml:"password"`
+
+	// The URI for the master key. We use tink for envelope encryption as described in https://github.com/google/tink/blob/9bc2667963e20eb42611b7581e570f0dddf65a2b/docs/KEY-MANAGEMENT.md#key-management-with-tink
+	// When left empty, then MasterKeyPassword is used.
+	MasterKeyURI string `toml:"master_key_uri"`
+
+	// Path for credentials. Required when using an external KMS. More info at https://github.com/google/tink/blob/9bc2667963e20eb42611b7581e570f0dddf65a2b/docs/KEY-MANAGEMENT.md#credentials
+	KMSCredentialsPath string `toml:"kms_credentials_path"`
 }
 
 func (k *KeyStoreServiceConfig) IsEmpty() bool {
@@ -105,9 +128,10 @@ func (k *KeyStoreServiceConfig) IsEmpty() bool {
 type DIDServiceConfig struct {
 	*BaseServiceConfig
 	Methods                  []string `toml:"methods"`
-	ResolutionMethods        []string `toml:"resolution_methods"`
+	LocalResolutionMethods   []string `toml:"local_resolution_methods"`
 	UniversalResolverURL     string   `toml:"universal_resolver_url"`
 	UniversalResolverMethods []string `toml:"universal_resolver_methods"`
+	IONResolverURL           string   `toml:"ion_resolver_url"`
 }
 
 func (d *DIDServiceConfig) IsEmpty() bool {
@@ -165,6 +189,7 @@ func (p *PresentationServiceConfig) IsEmpty() bool {
 
 type WebhookServiceConfig struct {
 	*BaseServiceConfig
+	WebhookTimeout string `toml:"webhook_timeout"`
 }
 
 func (p *WebhookServiceConfig) IsEmpty() bool {
@@ -184,20 +209,17 @@ func LoadConfig(path string) (*SSIServiceConfig, error) {
 
 	// create the config object
 	var config SSIServiceConfig
-
-	if err := parseAndApplyDefaults(config); err != nil {
+	if err = parseAndApplyDefaults(config); err != nil {
 		return nil, errors.Wrap(err, "parse and apply defaults")
 	}
 
 	if loadDefaultConfig {
 		loadDefaultServicesConfig(&config)
-	} else {
-		if err := loadTOMLConfig(path, &config); err != nil {
-			return nil, errors.Wrap(err, "load toml config")
-		}
+	} else if err = loadTOMLConfig(path, &config); err != nil {
+		return nil, errors.Wrap(err, "load toml config")
 	}
 
-	if err := applyEnvVariables(&config); err != nil {
+	if err = applyEnvVariables(&config); err != nil {
 		return nil, errors.Wrap(err, "apply env variables")
 	}
 
@@ -210,7 +232,7 @@ func checkValidConfigPath(path string) (bool, error) {
 	if path == "" {
 		logrus.Info("no config path provided, loading default config...")
 		defaultConfig = true
-	} else if filepath.Ext(path) != ConfigExtension {
+	} else if filepath.Ext(path) != Extension {
 		return false, fmt.Errorf("path<%s> did not match the expected TOML format", path)
 	}
 
@@ -251,13 +273,13 @@ func loadDefaultServicesConfig(config *SSIServiceConfig) {
 		StorageProvider: "bolt",
 		ServiceEndpoint: DefaultServiceEndpoint,
 		KeyStoreConfig: KeyStoreServiceConfig{
-			BaseServiceConfig:  &BaseServiceConfig{Name: "keystore"},
-			ServiceKeyPassword: "default-password",
+			BaseServiceConfig: &BaseServiceConfig{Name: "keystore"},
+			MasterKeyPassword: "default-password",
 		},
 		DIDConfig: DIDServiceConfig{
-			BaseServiceConfig: &BaseServiceConfig{Name: "did"},
-			Methods:           []string{"key", "web"},
-			ResolutionMethods: []string{"key", "peer", "web", "pkh"},
+			BaseServiceConfig:      &BaseServiceConfig{Name: "did"},
+			Methods:                []string{"key", "web"},
+			LocalResolutionMethods: []string{"key", "peer", "web", "pkh"},
 		},
 		SchemaConfig: SchemaServiceConfig{
 			BaseServiceConfig: &BaseServiceConfig{Name: "schema"},
@@ -276,6 +298,7 @@ func loadDefaultServicesConfig(config *SSIServiceConfig) {
 		},
 		WebhookConfig: WebhookServiceConfig{
 			BaseServiceConfig: &BaseServiceConfig{Name: "webhook"},
+			WebhookTimeout:    "10s",
 		},
 	}
 
@@ -298,36 +321,29 @@ func loadTOMLConfig(path string, config *SSIServiceConfig) error {
 
 func applyEnvVariables(config *SSIServiceConfig) error {
 	if err := godotenv.Load(DefaultEnvPath); err != nil {
-
 		// The error indicates that the file or directory does not exist.
 		if os.IsNotExist(err) {
 			logrus.Info("no .env file found, skipping apply env variables...")
 			return nil
 		}
-
 		return errors.Wrap(err, "dotenv parsing")
 	}
 
-	keystorePassword, present := os.LookupEnv(string(KeystorePassword))
-
+	keystorePassword, present := os.LookupEnv(KeystorePassword.String())
 	if present {
-		config.Services.KeyStoreConfig.ServiceKeyPassword = keystorePassword
+		config.Services.KeyStoreConfig.MasterKeyPassword = keystorePassword
 	}
 
-	dbPassword, present := os.LookupEnv(string(DBPassword))
-
+	dbPassword, present := os.LookupEnv(DBPassword.String())
 	if present {
-		if config.Services.StorageOption == nil {
-			config.Services.StorageOption = make(map[string]interface{})
+		if len(config.Services.StorageOptions) != 0 {
+			for _, storageOption := range config.Services.StorageOptions {
+				if storageOption.ID == storage.PasswordOption {
+					storageOption.Option = dbPassword
+					break
+				}
+			}
 		}
-
-		storageOptionMap, ok := config.Services.StorageOption.(map[string]interface{})
-		if !ok {
-			return errors.New("storage option must be of type map[string]interface{}")
-		}
-
-		storageOptionMap["password"] = dbPassword
-		config.Services.StorageOption = storageOptionMap
 	}
 
 	return nil
