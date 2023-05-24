@@ -6,14 +6,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	sdkutil "github.com/TBD54566975/ssi-sdk/util"
+	"github.com/gin-gonic/gin"
 	"github.com/goccy/go-json"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
 	"github.com/tbd54566975/ssi-service/config"
+	"github.com/tbd54566975/ssi-service/internal/util"
 	"github.com/tbd54566975/ssi-service/pkg/service/framework"
 	"github.com/tbd54566975/ssi-service/pkg/storage"
 
@@ -123,15 +126,16 @@ func (s Service) GetWebhook(ctx context.Context, request GetWebhookRequest) (*Ge
 	return &GetWebhookResponse{Webhook: *webhook}, nil
 }
 
-func (s Service) GetWebhooks(ctx context.Context) (*GetWebhooksResponse, error) {
-	logrus.Debug("getting all webhooks")
+// ListWebhooks returns all webhooks in storage.
+func (s Service) ListWebhooks(ctx context.Context) (*ListWebhooksResponse, error) {
+	logrus.Debug("listing all webhooks")
 
-	webhooks, err := s.storage.GetWebhooks(ctx)
+	webhooks, err := s.storage.ListWebhooks(ctx)
 	if err != nil {
-		return nil, sdkutil.LoggingErrorMsg(err, "get webhooks")
+		return nil, sdkutil.LoggingErrorMsg(err, "list webhooks")
 	}
 
-	return &GetWebhooksResponse{Webhooks: webhooks}, nil
+	return &ListWebhooksResponse{Webhooks: webhooks}, nil
 }
 
 // DeleteWebhook deletes a webhook from the storage by removing a given DIDWebID from the list of URLs associated with the webhook.
@@ -173,13 +177,14 @@ func (s Service) GetSupportedVerbs() GetSupportedVerbsResponse {
 	return GetSupportedVerbsResponse{Verbs: []Verb{Create, Delete}}
 }
 
-func (s Service) PublishWebhook(noun Noun, verb Verb, payloadReader io.Reader) {
-	ctx, cancel := context.WithTimeout(context.Background(), s.timeoutDuration)
+// TODO: consider returning an error to be handled by the gin middleware
+func (s Service) PublishWebhook(c *gin.Context, noun Noun, verb Verb, payloadReader io.Reader) {
+	timeoutCtx, cancel := context.WithTimeout(c.Copy(), s.timeoutDuration)
 	defer cancel()
 
 	nounString := string(noun)
 	verbString := string(verb)
-	webhook, err := s.storage.GetWebhook(ctx, nounString, verbString)
+	webhook, err := s.storage.GetWebhook(timeoutCtx, nounString, verbString)
 	if err != nil {
 		logrus.WithError(err).Debugf("getting webhook: %s:%s", nounString, verbString)
 		return
@@ -196,6 +201,7 @@ func (s Service) PublishWebhook(noun Noun, verb Verb, payloadReader io.Reader) {
 		return
 	}
 
+	var wg sync.WaitGroup
 	postPayload := Payload{Noun: noun, Verb: verb, Data: payloadBytes}
 	for _, url := range webhook.URLS {
 		postPayload.URL = url
@@ -205,10 +211,15 @@ func (s Service) PublishWebhook(noun Noun, verb Verb, payloadReader io.Reader) {
 			continue
 		}
 
-		if err = s.post(ctx, url, string(postJSONData)); err != nil {
-			logrus.WithError(err).Errorf("posting payload to %s", url)
-		}
+		wg.Add(1)
+		go func(url, data string) {
+			defer wg.Done()
+			if err = s.post(timeoutCtx, url, data); err != nil {
+				logrus.WithError(err).Errorf("posting payload to %s", url)
+			}
+		}(url, string(postJSONData))
 	}
+	wg.Wait()
 }
 
 func (s Service) post(ctx context.Context, url string, json string) error {
@@ -223,7 +234,7 @@ func (s Service) post(ctx context.Context, url string, json string) error {
 		return errors.Wrap(err, "client http client")
 	}
 
-	if !is2xxResponse(resp.StatusCode) {
+	if !util.Is2xxResponse(resp.StatusCode) {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return errors.Wrap(err, "parsing body")
@@ -232,8 +243,4 @@ func (s Service) post(ctx context.Context, url string, json string) error {
 	}
 
 	return err
-}
-
-func is2xxResponse(statusCode int) bool {
-	return statusCode/100 != 2
 }

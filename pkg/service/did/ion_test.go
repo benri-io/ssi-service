@@ -74,12 +74,17 @@ func TestIONHandler(t *testing.T) {
 	})
 
 	t.Run("Test Create DID", func(tt *testing.T) {
+		gock.New("https://ion.tbddev.org").
+			Post("/operations").
+			Reply(200)
+		defer gock.Off()
+
 		// create a handler
 		s := setupTestDB(tt)
 		keystoreService := testKeyStoreService(tt, s)
 		didStorage, err := NewDIDStorage(s)
 		assert.NoError(tt, err)
-		handler, err := NewIONHandler("https://tbdwebsiteonline.com", didStorage, keystoreService)
+		handler, err := NewIONHandler("https://ion.tbddev.org", didStorage, keystoreService)
 		assert.NoError(tt, err)
 		assert.NotEmpty(tt, handler)
 
@@ -167,7 +172,7 @@ func TestIONHandler(t *testing.T) {
 		defer gock.Off()
 
 		// get all DIDs
-		gotDIDs, err := handler.GetDIDs(context.Background())
+		gotDIDs, err := handler.ListDIDs(context.Background())
 		assert.NoError(tt, err)
 		assert.NotEmpty(tt, gotDIDs)
 		assert.Len(tt, gotDIDs.DIDs, 1)
@@ -180,13 +185,13 @@ func TestIONHandler(t *testing.T) {
 		assert.NoError(tt, err)
 
 		// get all DIDs after deleting
-		gotDIDsAfterDelete, err := handler.GetDIDs(context.Background())
+		gotDIDsAfterDelete, err := handler.ListDIDs(context.Background())
 		assert.NoError(tt, err)
 		assert.NotEmpty(tt, gotDIDs)
 		assert.Len(tt, gotDIDsAfterDelete.DIDs, 0)
 
 		// get all deleted DIDs after delete
-		gotDeletedDIDs, err := handler.GetDeletedDIDs(context.Background())
+		gotDeletedDIDs, err := handler.ListDeletedDIDs(context.Background())
 		assert.NoError(tt, err)
 		assert.NotEmpty(tt, gotDIDs)
 		assert.Len(tt, gotDeletedDIDs.DIDs, 1)

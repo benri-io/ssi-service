@@ -31,7 +31,7 @@ func TestDIDRouter(t *testing.T) {
 	t.Run("DID Service Test", func(tt *testing.T) {
 
 		db := setupTestDB(tt)
-		assert.NotNil(tt, db)
+		assert.NotEmpty(tt, db)
 
 		keyStoreService := testKeyStoreService(tt, db)
 		methods := []string{didsdk.KeyMethod.String()}
@@ -81,7 +81,7 @@ func TestDIDRouter(t *testing.T) {
 		assert.NotEmpty(tt, createDIDResponse2)
 
 		// get all DIDs back
-		getDIDsResponse, err := didService.GetDIDsByMethod(context.Background(), did.GetDIDsRequest{Method: didsdk.KeyMethod})
+		getDIDsResponse, err := didService.ListDIDsByMethod(context.Background(), did.ListDIDsRequest{Method: didsdk.KeyMethod})
 		assert.NoError(tt, err)
 		assert.NotEmpty(tt, getDIDsResponse)
 		assert.Len(tt, getDIDsResponse.DIDs, 2)
@@ -104,13 +104,13 @@ func TestDIDRouter(t *testing.T) {
 		assert.NoError(tt, err)
 
 		// get all DIDs back
-		getDIDsResponse, err = didService.GetDIDsByMethod(context.Background(), did.GetDIDsRequest{Method: didsdk.KeyMethod})
+		getDIDsResponse, err = didService.ListDIDsByMethod(context.Background(), did.ListDIDsRequest{Method: didsdk.KeyMethod})
 		assert.NoError(tt, err)
 		assert.NotEmpty(tt, getDIDsResponse)
 		assert.Len(tt, getDIDsResponse.DIDs, 0)
 
 		// get deleted DIDs back
-		getDIDsResponse, err = didService.GetDIDsByMethod(context.Background(), did.GetDIDsRequest{Method: didsdk.KeyMethod, Deleted: true})
+		getDIDsResponse, err = didService.ListDIDsByMethod(context.Background(), did.ListDIDsRequest{Method: didsdk.KeyMethod, Deleted: true})
 		assert.NoError(tt, err)
 		assert.NotEmpty(tt, getDIDsResponse)
 		assert.Len(tt, getDIDsResponse.DIDs, 2)
@@ -119,7 +119,7 @@ func TestDIDRouter(t *testing.T) {
 	t.Run("DID Web Service Test", func(tt *testing.T) {
 
 		db := setupTestDB(tt)
-		assert.NotNil(tt, db)
+		assert.NotEmpty(tt, db)
 
 		keyStoreService := testKeyStoreService(tt, db)
 		methods := []string{didsdk.KeyMethod.String(), didsdk.WebMethod.String()}
@@ -172,7 +172,7 @@ func TestDIDRouter(t *testing.T) {
 		assert.NotEmpty(tt, createDIDResponse2)
 
 		// get all DIDs back
-		getDIDsResponse, err := didService.GetDIDsByMethod(context.Background(), did.GetDIDsRequest{Method: didsdk.WebMethod})
+		getDIDsResponse, err := didService.ListDIDsByMethod(context.Background(), did.ListDIDsRequest{Method: didsdk.WebMethod})
 		assert.NoError(tt, err)
 		assert.NotEmpty(tt, getDIDsResponse)
 		assert.Len(tt, getDIDsResponse.DIDs, 2)
@@ -195,7 +195,7 @@ func TestDIDRouter(t *testing.T) {
 		assert.NoError(tt, err)
 
 		// get all DIDs back
-		getDIDsResponse, err = didService.GetDIDsByMethod(context.Background(), did.GetDIDsRequest{Method: didsdk.WebMethod})
+		getDIDsResponse, err = didService.ListDIDsByMethod(context.Background(), did.ListDIDsRequest{Method: didsdk.WebMethod})
 		assert.NoError(tt, err)
 		assert.NotEmpty(tt, getDIDsResponse)
 		assert.Len(tt, getDIDsResponse.DIDs, 0)

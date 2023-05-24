@@ -41,23 +41,23 @@ func NewDIDRouter(s svcframework.Service) (*DIDRouter, error) {
 	return &DIDRouter{service: didService}, nil
 }
 
-type GetDIDMethodsResponse struct {
+type ListDIDMethodsResponse struct {
 	DIDMethods []didsdk.Method `json:"method,omitempty"`
 }
 
-// GetDIDMethods godoc
+// ListDIDMethods godoc
 //
-//	@Summary		Get DID Methods
-//	@Description	Get supported DID method
+//	@Summary		List DID Methods
+//	@Description	Get the list of supported DID methods
 //	@Tags			DecentralizedIdentityAPI
 //	@Accept			json
 //	@Produce		json
-//	@Success		200	{object}	GetDIDMethodsResponse
+//	@Success		200	{object}	ListDIDMethodsResponse
 //	@Router			/v1/dids [get]
-func (dr DIDRouter) GetDIDMethods(c *gin.Context) error {
+func (dr DIDRouter) ListDIDMethods(c *gin.Context) {
 	methods := dr.service.GetSupportedMethods()
-	response := GetDIDMethodsResponse{DIDMethods: methods.Methods}
-	return framework.Respond(c, response, http.StatusOK)
+	response := ListDIDMethodsResponse{DIDMethods: methods.Methods}
+	framework.Respond(c, response, http.StatusOK)
 }
 
 type CreateDIDByMethodRequest struct {
@@ -89,37 +89,42 @@ type CreateDIDByMethodResponse struct {
 //	@Failure		400		{string}	string	"Bad request"
 //	@Failure		500		{string}	string	"Internal server error"
 //	@Router			/v1/dids/{method} [put]
-func (dr DIDRouter) CreateDIDByMethod(c *gin.Context) error {
+func (dr DIDRouter) CreateDIDByMethod(c *gin.Context) {
 	method := framework.GetParam(c, MethodParam)
 	if method == nil {
 		errMsg := "create DID request missing method parameter"
-		return framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+		framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+		return
 	}
 
 	var request CreateDIDByMethodRequest
 	invalidCreateDIDRequest := "invalid create DID request"
 	if err := framework.Decode(c.Request, &request); err != nil {
-		return framework.LoggingRespondErrWithMsg(c, err, invalidCreateDIDRequest, http.StatusBadRequest)
+		framework.LoggingRespondErrWithMsg(c, err, invalidCreateDIDRequest, http.StatusBadRequest)
+		return
 	}
 
 	if err := framework.ValidateRequest(request); err != nil {
-		return framework.LoggingRespondErrWithMsg(c, err, invalidCreateDIDRequest, http.StatusBadRequest)
+		framework.LoggingRespondErrWithMsg(c, err, invalidCreateDIDRequest, http.StatusBadRequest)
+		return
 	}
 
 	// TODO(gabe) check if the key type is supported for the method, to tell whether this is a bad req or internal error
 	createDIDRequest, err := toCreateDIDRequest(didsdk.Method(*method), request)
 	if err != nil {
 		errMsg := fmt.Sprintf("%s: could not create DID for method<%s> with key type: %s", invalidCreateDIDRequest, *method, request.KeyType)
-		return framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusBadRequest)
+		framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusBadRequest)
+		return
 	}
 	createDIDResponse, err := dr.service.CreateDIDByMethod(c, *createDIDRequest)
 	if err != nil {
 		errMsg := fmt.Sprintf("could not create DID for method<%s> with key type: %s", *method, request.KeyType)
-		return framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusInternalServerError)
+		framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusInternalServerError)
+		return
 	}
 
 	resp := CreateDIDByMethodResponse{DID: createDIDResponse.DID}
-	return framework.Respond(c, resp, http.StatusCreated)
+	framework.Respond(c, resp, http.StatusCreated)
 }
 
 // toCreateDIDRequest converts CreateDIDByMethodRequest to did.CreateDIDRequest, parsing options according to method
@@ -173,7 +178,7 @@ func optionsToType(options any, out any) error {
 }
 
 type GetDIDByMethodResponse struct {
-	DID didsdk.Document `json:"did,omitempty"`
+	DID didsdk.Document `json:"did"`
 }
 
 // GetDIDByMethod godoc
@@ -189,16 +194,18 @@ type GetDIDByMethodResponse struct {
 //	@Success		200		{object}	GetDIDByMethodResponse
 //	@Failure		400		{string}	string	"Bad request"
 //	@Router			/v1/dids/{method}/{id} [get]
-func (dr DIDRouter) GetDIDByMethod(c *gin.Context) error {
+func (dr DIDRouter) GetDIDByMethod(c *gin.Context) {
 	method := framework.GetParam(c, MethodParam)
 	if method == nil {
 		errMsg := "get DID by method request missing method parameter"
-		return framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+		framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+		return
 	}
 	id := framework.GetParam(c, IDParam)
 	if id == nil {
 		errMsg := fmt.Sprintf("get DID request missing id parameter for method: %s", *method)
-		return framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+		framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+		return
 	}
 
 	// TODO(gabe) check if the method is supported, to tell whether this is a bad req or internal error
@@ -207,14 +214,15 @@ func (dr DIDRouter) GetDIDByMethod(c *gin.Context) error {
 	gotDID, err := dr.service.GetDIDByMethod(c, getDIDRequest)
 	if err != nil {
 		errMsg := fmt.Sprintf("could not get DID for method<%s> with id: %s", *method, *id)
-		return framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusBadRequest)
+		framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusBadRequest)
+		return
 	}
 
 	resp := GetDIDByMethodResponse{DID: gotDID.DID}
-	return framework.Respond(c, resp, http.StatusOK)
+	framework.Respond(c, resp, http.StatusOK)
 }
 
-type GetDIDsByMethodResponse struct {
+type ListDIDsByMethodResponse struct {
 	DIDs []didsdk.Document `json:"dids,omitempty"`
 }
 
@@ -224,25 +232,25 @@ type GetDIDsRequest struct {
 	Filter string `json:"filter,omitempty"`
 }
 
-// GetDIDsByMethod godoc
+// ListDIDsByMethod godoc
 //
-//	@Summary		Get DIDs
-//	@Description	Get DIDs by method. Checks for an optional "deleted=true" query parameter, which exclusively returns DIDs that have been "Soft Deleted".
+//	@Summary		List DIDs
+//	@Description	List DIDs by method. Checks for an optional "deleted=true" query parameter, which exclusively returns DIDs that have been "Soft Deleted".
 //	@Tags			DecentralizedIdentityAPI
 //	@Accept			json
 //	@Produce		json
-//	@Param			deleted	query		boolean			false	"When true, returns soft-deleted DIDs. Otherwise, returns DIDs that have not been soft-deleted. Default is false."
-//	@Param			request	body		GetDIDsRequest	true	"request body"
-//	@Success		200		{object}	GetDIDsByMethodResponse
+//	@Param			deleted	query		boolean	false	"When true, returns soft-deleted DIDs. Otherwise, returns DIDs that have not been soft-deleted. Default is false."
+//	@Success		200		{object}	ListDIDsByMethodResponse
 //	@Failure		400		{string}	string	"Bad request"
 //	@Failure		500		{string}	string	"Internal server error"
 //	@Router			/v1/dids/{method} [get]
-func (dr DIDRouter) GetDIDsByMethod(c *gin.Context) error {
+func (dr DIDRouter) ListDIDsByMethod(c *gin.Context) {
 	method := framework.GetParam(c, MethodParam)
 	deleted := framework.GetQueryValue(c, DeletedParam)
 	if method == nil {
-		errMsg := "get DIDs by method request missing method parameter"
-		return framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+		errMsg := "list DIDs by method request missing method parameter"
+		framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+		return
 	}
 	getIsDeleted := false
 	if deleted != nil {
@@ -250,22 +258,24 @@ func (dr DIDRouter) GetDIDsByMethod(c *gin.Context) error {
 		getIsDeleted = checkDeleted
 
 		if err != nil {
-			errMsg := "get DIDs by method request encountered a problem with the `deleted` query param"
-			return framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+			errMsg := "list DIDs by method request encountered a problem with the `deleted` query param"
+			framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+			return
 		}
 	}
 
 	// TODO(gabe) check if the method is supported, to tell whether this is a bad req or internal error
 	// TODO(gabe) differentiate between internal errors and not found DIDs
-	getDIDsRequest := did.GetDIDsRequest{Method: didsdk.Method(*method), Deleted: getIsDeleted}
-	gotDIDs, err := dr.service.GetDIDsByMethod(c, getDIDsRequest)
+	getDIDsRequest := did.ListDIDsRequest{Method: didsdk.Method(*method), Deleted: getIsDeleted}
+	gotDIDs, err := dr.service.ListDIDsByMethod(c, getDIDsRequest)
 	if err != nil {
 		errMsg := fmt.Sprintf("could not get DIDs for method: %s", *method)
-		return framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusInternalServerError)
+		framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusInternalServerError)
+		return
 	}
 
-	resp := GetDIDsByMethodResponse{DIDs: gotDIDs.DIDs}
-	return framework.Respond(c, resp, http.StatusOK)
+	resp := ListDIDsByMethodResponse{DIDs: gotDIDs.DIDs}
+	framework.Respond(c, resp, http.StatusOK)
 }
 
 type ResolveDIDResponse struct {
@@ -277,7 +287,7 @@ type ResolveDIDResponse struct {
 // SoftDeleteDIDByMethod godoc
 //
 //	@Description	When this is called with the correct did method and id it will flip the softDelete flag to true for the db entry.
-//	@Description	A user can still get the did if they know the DID ID, and the did keys will still exist, but this did will not show up in the GetDIDsByMethod call
+//	@Description	A user can still get the did if they know the DID ID, and the did keys will still exist, but this did will not show up in the ListDIDsByMethod call
 //	@Description	This facilitates a clean SSI-Service Admin UI but not leave any hanging VCs with inaccessible hanging DIDs.
 //	@Summary		Soft Delete DID
 //	@Description	Soft Deletes DID by method
@@ -290,25 +300,28 @@ type ResolveDIDResponse struct {
 //	@Failure		400		{string}	string	"Bad request"
 //	@Failure		500		{string}	string	"Internal server error"
 //	@Router			/v1/dids/{method}/{id} [delete]
-func (dr DIDRouter) SoftDeleteDIDByMethod(c *gin.Context) error {
+func (dr DIDRouter) SoftDeleteDIDByMethod(c *gin.Context) {
 	method := framework.GetParam(c, MethodParam)
 	if method == nil {
 		errMsg := "soft delete DID by method request missing method parameter"
-		return framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+		framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+		return
 	}
 	id := framework.GetParam(c, IDParam)
 	if id == nil {
 		errMsg := fmt.Sprintf("soft delete DID request missing id parameter for method: %s", *method)
-		return framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+		framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+		return
 	}
 
 	deleteDIDRequest := did.DeleteDIDRequest{Method: didsdk.Method(*method), ID: *id}
 	if err := dr.service.SoftDeleteDIDByMethod(c, deleteDIDRequest); err != nil {
 		errMsg := fmt.Sprintf("could not soft delete DID with id: %s", *id)
-		return framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusInternalServerError)
+		framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusInternalServerError)
+		return
 	}
 
-	return framework.Respond(c, nil, http.StatusNoContent)
+	framework.Respond(c, nil, http.StatusNoContent)
 }
 
 // ResolveDID godoc
@@ -322,20 +335,22 @@ func (dr DIDRouter) SoftDeleteDIDByMethod(c *gin.Context) error {
 //	@Success		200	{object}	ResolveDIDResponse
 //	@Failure		400	{string}	string	"Bad request"
 //	@Router			/v1/dids/resolver/{id} [get]
-func (dr DIDRouter) ResolveDID(c *gin.Context) error {
+func (dr DIDRouter) ResolveDID(c *gin.Context) {
 	id := framework.GetParam(c, IDParam)
 	if id == nil {
 		errMsg := "get DID request missing id parameter"
-		return framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+		framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+		return
 	}
 
 	resolveDIDRequest := did.ResolveDIDRequest{DID: *id}
 	resolvedDID, err := dr.service.ResolveDID(resolveDIDRequest)
 	if err != nil {
 		errMsg := fmt.Sprintf("could not get DID with id: %s", *id)
-		return framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusBadRequest)
+		framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusBadRequest)
+		return
 	}
 
 	resp := ResolveDIDResponse{ResolutionMetadata: resolvedDID.ResolutionMetadata, DIDDocument: resolvedDID.DIDDocument, DIDDocumentMetadata: resolvedDID.DIDDocumentMetadata}
-	return framework.Respond(c, resp, http.StatusOK)
+	framework.Respond(c, resp, http.StatusOK)
 }

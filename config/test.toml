@@ -7,7 +7,8 @@ desc = "Configuration to be used while running the service for testing with dock
 [server]
 env = "test" # either 'dev', 'test' or 'prod'
 api_host = "0.0.0.0:3000"
-debug_host = "0.0.0.0:4000"
+
+# jager config
 jager_host = "http://jaeger:14268/api/traces"
 jager_enabled = true
 
@@ -49,7 +50,7 @@ methods = ["key", "web", "ion"]
 local_resolution_methods = ["key", "web", "pkh", "peer"]
 universal_resolver_url = "http://uni-resolver-web:8080"
 universal_resolver_methods = ["ion"]
-ion_resolver_url = "https://tbdwebsiteonline.com"
+ion_resolver_url = "https://ion.tbddev.org"
 
 [services.schema]
 name = "schema"
@@ -57,11 +58,15 @@ name = "schema"
 [services.credential]
 name = "credential"
 
+[services.issuance]
+name = "issuance"
+
 [services.manifest]
 name = "manifest"
 
 [services.presentation]
 name = "presentation"
+expiration_duration = "30m"
 
 [services.webhook]
 name = "webhook"

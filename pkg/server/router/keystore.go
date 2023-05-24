@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/TBD54566975/ssi-sdk/crypto"
+	"github.com/TBD54566975/ssi-sdk/crypto/jwx"
 	"github.com/gin-gonic/gin"
 	"github.com/mr-tron/base58"
 	"github.com/pkg/errors"
@@ -75,32 +76,41 @@ func (sk StoreKeyRequest) ToServiceRequest() (*keystore.StoreKeyRequest, error) 
 //	@Failure		400	{string}	string	"Bad request"
 //	@Failure		500	{string}	string	"Internal server error"
 //	@Router			/v1/keys [put]
-func (ksr *KeyStoreRouter) StoreKey(c *gin.Context) error {
+func (ksr *KeyStoreRouter) StoreKey(c *gin.Context) {
 	var request StoreKeyRequest
 	if err := framework.Decode(c.Request, &request); err != nil {
 		errMsg := "invalid store key request"
-		return framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusBadRequest)
+		framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusBadRequest)
+		return
 	}
 
 	req, err := request.ToServiceRequest()
 	if err != nil {
 		errMsg := "could not process store key request"
-		return framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusBadRequest)
+		framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusBadRequest)
+		return
 	}
 
 	if err = ksr.service.StoreKey(c, *req); err != nil {
 		errMsg := fmt.Sprintf("could not store key: %s, %s", request.ID, err.Error())
-		return framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusInternalServerError)
+		framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusInternalServerError)
+		return
 	}
 
-	return framework.Respond(c, nil, http.StatusCreated)
+	framework.Respond(c, nil, http.StatusCreated)
 }
 
 type GetKeyDetailsResponse struct {
 	ID         string         `json:"id,omitempty"`
 	Type       crypto.KeyType `json:"type,omitempty"`
 	Controller string         `json:"controller,omitempty"`
-	CreatedAt  string         `json:"createdAt,omitempty"`
+
+	// Represents the time at which the key was created. Encoded according to RFC3339.
+	CreatedAt string `json:"createdAt,omitempty"`
+
+	// The public key in JWK format according to RFC7517. This public key is associated with the private
+	// key with the associated ID.
+	PublicKeyJWK jwx.PublicKeyJWK `json:"publicKeyJwk"`
 }
 
 // GetKeyDetails godoc
@@ -114,26 +124,33 @@ type GetKeyDetailsResponse struct {
 //	@Success		200	{object}	GetKeyDetailsResponse
 //	@Failure		400	{string}	string	"Bad request"
 //	@Router			/v1/keys/{id} [get]
-func (ksr *KeyStoreRouter) GetKeyDetails(c *gin.Context) error {
+func (ksr *KeyStoreRouter) GetKeyDetails(c *gin.Context) {
 	id := framework.GetParam(c, IDParam)
 	if id == nil {
 		errMsg := "cannot get key details without ID parameter"
-		return framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+		framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+		return
 	}
 
 	gotKeyDetails, err := ksr.service.GetKeyDetails(c, keystore.GetKeyDetailsRequest{ID: *id})
 	if err != nil {
 		errMsg := fmt.Sprintf("could not get key details for id: %s", *id)
-		return framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusBadRequest)
+		framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusBadRequest)
+		return
 	}
 
 	resp := GetKeyDetailsResponse{
-		ID:         gotKeyDetails.ID,
-		Type:       gotKeyDetails.Type,
-		Controller: gotKeyDetails.Controller,
-		CreatedAt:  gotKeyDetails.CreatedAt,
+		ID:           gotKeyDetails.ID,
+		Type:         gotKeyDetails.Type,
+		Controller:   gotKeyDetails.Controller,
+		CreatedAt:    gotKeyDetails.CreatedAt,
+		PublicKeyJWK: gotKeyDetails.PublicKeyJWK,
 	}
-	return framework.Respond(c, resp, http.StatusOK)
+	framework.Respond(c, resp, http.StatusOK)
+}
+
+type RevokeKeyResponse struct {
+	ID string `json:"id,omitempty"`
 }
 
 // RevokeKey godoc
@@ -143,24 +160,25 @@ func (ksr *KeyStoreRouter) GetKeyDetails(c *gin.Context) error {
 //	@Tags			KeyStoreAPI
 //	@Accept			json
 //	@Produce		json
-//	@Param			id	path	string	true	"ID of the key to revoke"
-//	@Success		200
+//	@Param			id	path		string	true	"ID of the key to revoke"
+//	@Success		200	{object}	RevokeKeyResponse
 //	@Failure		400	{string}	string	"Bad request"
 //	@Failure		500	{string}	string	"Internal server error"
 //	@Router			/v1/keys/{id} [delete]
-func (ksr *KeyStoreRouter) RevokeKey(c *gin.Context) error {
+func (ksr *KeyStoreRouter) RevokeKey(c *gin.Context) {
 	id := framework.GetParam(c, IDParam)
 	if id == nil {
 		errMsg := "cannot delete key without ID parameter"
-		return framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+		framework.LoggingRespondErrMsg(c, errMsg, http.StatusBadRequest)
+		return
 	}
 
-	err := ksr.service.RevokeKey(c, keystore.RevokeKeyRequest{ID: *id})
-	if err != nil {
-		errMsg := fmt.Sprintf("could not delete key for id: %s", *id)
-		return framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusInternalServerError)
+	if err := ksr.service.RevokeKey(c, keystore.RevokeKeyRequest{ID: *id}); err != nil {
+		errMsg := fmt.Sprintf("could not revoke key for id: %s", *id)
+		framework.LoggingRespondErrWithMsg(c, err, errMsg, http.StatusInternalServerError)
+		return
 	}
 
-	var resp GetKeyDetailsResponse
-	return framework.Respond(c, resp, http.StatusOK)
+	resp := RevokeKeyResponse{ID: *id}
+	framework.Respond(c, resp, http.StatusOK)
 }

@@ -17,7 +17,7 @@ import (
 	credint "github.com/tbd54566975/ssi-service/internal/credential"
 	"github.com/tbd54566975/ssi-service/pkg/service/credential"
 	"github.com/tbd54566975/ssi-service/pkg/service/framework"
-	"github.com/tbd54566975/ssi-service/pkg/service/issuing"
+	"github.com/tbd54566975/ssi-service/pkg/service/issuance"
 	"github.com/tbd54566975/ssi-service/pkg/service/keystore"
 	"github.com/tbd54566975/ssi-service/pkg/service/manifest/model"
 	manifeststg "github.com/tbd54566975/ssi-service/pkg/service/manifest/storage"
@@ -30,7 +30,7 @@ import (
 type Service struct {
 	storage                 *manifeststg.Storage
 	opsStorage              *operation.Storage
-	issuanceTemplateStorage *issuing.Storage
+	issuanceTemplateStorage *issuance.Storage
 	config                  config.ManifestServiceConfig
 
 	// external dependencies
@@ -82,14 +82,14 @@ func NewManifestService(config config.ManifestServiceConfig, s storage.ServiceSt
 	if err != nil {
 		return nil, sdkutil.LoggingErrorMsg(err, "could not instantiate storage for the operations")
 	}
-	issuingStorage, err := issuing.NewIssuingStorage(s)
+	issuanceStorage, err := issuance.NewIssuanceStorage(s)
 	if err != nil {
 		return nil, sdkutil.LoggingErrorMsg(err, "could not instantiate storage for issuance templates")
 	}
 	return &Service{
 		storage:                 manifestStorage,
 		opsStorage:              opsStorage,
-		issuanceTemplateStorage: issuingStorage,
+		issuanceTemplateStorage: issuanceStorage,
 		config:                  config,
 		keyStore:                keyStore,
 		didResolver:             didResolver,
@@ -218,11 +218,11 @@ func (s Service) GetManifest(ctx context.Context, request model.GetManifestReque
 	return &response, nil
 }
 
-func (s Service) GetManifests(ctx context.Context) (*model.GetManifestsResponse, error) {
-	gotManifests, err := s.storage.GetManifests(ctx)
+func (s Service) ListManifests(ctx context.Context) (*model.ListManifestsResponse, error) {
+	gotManifests, err := s.storage.ListManifests(ctx)
 
 	if err != nil {
-		return nil, sdkutil.LoggingErrorMsg(err, "could not get manifests(s)")
+		return nil, sdkutil.LoggingErrorMsg(err, "could not list manifests(s)")
 	}
 
 	manifests := make([]model.GetManifestResponse, 0, len(gotManifests))
@@ -230,7 +230,7 @@ func (s Service) GetManifests(ctx context.Context) (*model.GetManifestsResponse,
 		response := model.GetManifestResponse{Manifest: m.Manifest, ManifestJWT: m.ManifestJWT}
 		manifests = append(manifests, response)
 	}
-	response := model.GetManifestsResponse{Manifests: manifests}
+	response := model.ListManifestsResponse{Manifests: manifests}
 	return &response, nil
 }
 
@@ -345,7 +345,7 @@ func (s Service) attemptAutomaticIssuance(ctx context.Context, request model.Sub
 
 	issuanceTemplate := issuanceTemplates[0].IssuanceTemplate
 	if len(issuanceTemplates) > 1 {
-		logrus.Warnf("found multiple issuance templates for manifest<%s>, using first entry only", manifestID)
+		logrus.Warnf("found issuance issuance templates for manifest<%s>, using first entry only", manifestID)
 	}
 
 	credResp, creds, err := s.buildFulfillmentCredentialResponseFromTemplate(ctx, applicantDID, manifestID, gotManifest.IssuerKID,
@@ -371,7 +371,7 @@ func (s Service) attemptAutomaticIssuance(ctx context.Context, request model.Sub
 		ResponseJWT:  *responseJWT,
 	}
 	_, storedOp, err := s.storage.StoreReviewApplication(ctx, applicationID, true,
-		"automatic from issuing template", opcredential.IDFromResponseID(applicationID), storedResponse)
+		"automatic from issuance template", opcredential.IDFromResponseID(applicationID), storedResponse)
 	if err != nil {
 		return nil, errors.Wrap(err, "reviewing application")
 	}
@@ -459,12 +459,12 @@ func (s Service) GetApplication(ctx context.Context, request model.GetApplicatio
 	return &response, nil
 }
 
-func (s Service) GetApplications(ctx context.Context) (*model.GetApplicationsResponse, error) {
-	logrus.Debugf("getting application(s)")
+func (s Service) ListApplications(ctx context.Context) (*model.ListApplicationsResponse, error) {
+	logrus.Debugf("listing application(s)")
 
-	gotApps, err := s.storage.GetApplications(ctx)
+	gotApps, err := s.storage.ListApplications(ctx)
 	if err != nil {
-		return nil, sdkutil.LoggingErrorMsg(err, "could not get application(s)")
+		return nil, sdkutil.LoggingErrorMsg(err, "could not list application(s)")
 	}
 
 	apps := make([]manifest.CredentialApplication, 0, len(gotApps))
@@ -472,7 +472,7 @@ func (s Service) GetApplications(ctx context.Context) (*model.GetApplicationsRes
 		apps = append(apps, cred.Application)
 	}
 
-	response := model.GetApplicationsResponse{Applications: apps}
+	response := model.ListApplicationsResponse{Applications: apps}
 	return &response, nil
 }
 
@@ -502,12 +502,12 @@ func (s Service) GetResponse(ctx context.Context, request model.GetResponseReque
 	return &response, nil
 }
 
-func (s Service) GetResponses(ctx context.Context) (*model.GetResponsesResponse, error) {
-	logrus.Debugf("getting response(s)")
+func (s Service) ListResponses(ctx context.Context) (*model.ListResponsesResponse, error) {
+	logrus.Debugf("listing responses")
 
-	gotResponses, err := s.storage.GetResponses(ctx)
+	gotResponses, err := s.storage.ListResponses(ctx)
 	if err != nil {
-		return nil, sdkutil.LoggingErrorMsg(err, "could not get response(s)")
+		return nil, sdkutil.LoggingErrorMsg(err, "could not list responses")
 	}
 
 	responses := make([]manifest.CredentialResponse, 0, len(gotResponses))
@@ -515,7 +515,7 @@ func (s Service) GetResponses(ctx context.Context) (*model.GetResponsesResponse,
 		responses = append(responses, res.Response)
 	}
 
-	response := model.GetResponsesResponse{Responses: responses}
+	response := model.ListResponsesResponse{Responses: responses}
 	return &response, nil
 }
 

@@ -43,21 +43,20 @@ jobs:
     - name: Install mage
       run: go install github.com/magefile/mage
 
+    - name: Check if swagger is up to date
+      if: ${{ github.ref != 'refs/heads/main' }}
+      run: |
+        mage -v spec
+        if (git diff --shortstat | grep '[0-9]'); then \
+          echo "Swagger spec is out of date. Please run mage spec"; \
+          exit 1;
+        fi
+
     - name: Build library
       run: mage build
 
     - name: Test
       run: mage CITest
-
-# TODO(gabe): fix https://github.com/TBD54566975/ssi-service/issues/447
-#    - name: Update spec and push generated spec file
-#      if: github.event_name == 'pull_request' && github.event.action != 'closed' && github.event.pull_request.merged != true
-#      run: |
-#        mage spec false
-#        git config user.name github-actions
-#        git config user.email github-actions@github.com
-#        git commit -am "gen OpenAPI Spec by github-actions"; \
-#        git push
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3

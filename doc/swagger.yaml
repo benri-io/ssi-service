@@ -158,40 +158,6 @@ definitions:
     - Dilithium2Sig
     - Dilithium3Sig
     - Dilithium5Sig
-  cryptosuite.LDKeyType:
-    enum:
-    - X25519KeyAgreementKey2020
-    - Ed25519VerificationKey2020
-    - X25519KeyAgreementKey2019
-    - Ed25519VerificationKey2018
-    - EcdsaSecp256k1VerificationKey2019
-    - Bls12381G2Key2020
-    - JsonWebKey2020
-    - Bls12381G2Key2020
-    - JsonWebKey2020
-    type: string
-    x-enum-varnames:
-    - X25519KeyAgreementKey2020
-    - Ed25519VerificationKey2020
-    - X25519KeyAgreementKey2019
-    - Ed25519VerificationKey2018
-    - ECDSASECP256k1VerificationKey2019
-    - BLS12381G2Key2020
-    - JSONWebKey2020Type
-    - BBSPlusSignatureSuiteType
-    - JWSSignatureSuiteType
-  cryptosuite.SignatureType:
-    enum:
-    - BbsBlsSignature2020
-    - BbsBlsSignatureProof2020
-    - JsonWebSignature2020
-    - JsonWebSignature2020
-    type: string
-    x-enum-varnames:
-    - BBSPlusSignature2020
-    - BBSPlusSignatureProof2020
-    - JSONWebSignature2020
-    - JWSSignatureSuiteProofAlgorithm
   did.Document:
     properties:
       '@context': {}
@@ -263,7 +229,7 @@ definitions:
         description: https://datatracker.ietf.org/doc/html/draft-multiformats-multibase-03
         type: string
       type:
-        $ref: '#/definitions/cryptosuite.LDKeyType'
+        type: string
     required:
     - controller
     - id
@@ -423,7 +389,7 @@ definitions:
     properties:
       proof_type:
         items:
-          $ref: '#/definitions/cryptosuite.SignatureType'
+          type: string
         type: array
     required:
     - proof_type
@@ -597,10 +563,10 @@ definitions:
     x-enum-varnames:
     - StatusReady
     - StatusNotReady
-  github_com_tbd54566975_ssi-service_pkg_service_issuing.ClaimTemplates:
+  github_com_tbd54566975_ssi-service_pkg_service_issuance.ClaimTemplates:
     additionalProperties: {}
     type: object
-  github_com_tbd54566975_ssi-service_pkg_service_issuing.CredentialTemplate:
+  github_com_tbd54566975_ssi-service_pkg_service_issuance.CredentialTemplate:
     properties:
       credentialInputDescriptor:
         description: |-
@@ -613,14 +579,14 @@ definitions:
         type: string
       data:
         allOf:
-        - $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_issuing.ClaimTemplates'
+        - $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_issuance.ClaimTemplates'
         description: |-
           Data that will be used to determine credential claims.
           Values may be json path like strings, or any other JSON primitive. Each entry will be used to come up with a
           claim about the credentialSubject in the credential that will be issued.
       expiry:
         allOf:
-        - $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_issuing.TimeLike'
+        - $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_issuance.TimeLike'
         description: Parameter to determine the expiry of the credential.
       id:
         description: ID corresponding to an OutputDescriptor.ID from the manifest.
@@ -632,7 +598,7 @@ definitions:
         description: ID of the CredentialSchema to be used for the issued credential.
         type: string
     type: object
-  github_com_tbd54566975_ssi-service_pkg_service_issuing.IssuanceTemplate:
+  github_com_tbd54566975_ssi-service_pkg_service_issuance.Template:
     properties:
       credentialManifest:
         description: ID of the credential manifest that this template corresponds
@@ -641,13 +607,13 @@ definitions:
       credentials:
         description: Info required to create a credential from a credential application.
         items:
-          $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_issuing.CredentialTemplate'
+          $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_issuance.CredentialTemplate'
         type: array
       id:
         description: ID of this template.
         type: string
       issuer:
-        description: ID of the issuer that will be issuing the credentials.
+        description: ID of the issuer that will be issuance the credentials.
         type: string
       issuerKid:
         description: ID of the key that will be used to sign the credentials.
@@ -657,7 +623,7 @@ definitions:
     - issuer
     - issuerKid
     type: object
-  github_com_tbd54566975_ssi-service_pkg_service_issuing.TimeLike:
+  github_com_tbd54566975_ssi-service_pkg_service_issuance.TimeLike:
     properties:
       duration:
         allOf:
@@ -679,6 +645,42 @@ definitions:
       revocable:
         description: Whether the credentials created should be revocable.
         type: boolean
+    type: object
+  github_com_tbd54566975_ssi-service_pkg_service_presentation_model.Request:
+    properties:
+      audience:
+        description: Audience as defined in https://www.rfc-editor.org/rfc/rfc7519.html#section-4.1.3.
+        items:
+          type: string
+        type: array
+      expiration:
+        description: Expiration as defined in https://www.rfc-editor.org/rfc/rfc7519.html#section-4.1.4
+        type: string
+      id:
+        description: |-
+          ID for this request. It matches the "jti" claim in the JWT.
+          This is an output only field.
+        type: string
+      issuerId:
+        description: DID of the issuer of this presentation definition.
+        type: string
+      issuerKid:
+        description: The privateKey associated with the KID used to sign the JWT.
+        type: string
+      presentationDefinitionId:
+        description: ID of the presentation definition used for this request.
+        type: string
+      presentationRequestJwt:
+        description: |-
+          PresentationDefinitionJWT is a JWT token with a "presentation_definition" claim within it. The
+          value of the field named "presentation_definition.id" matches PresentationDefinitionID.
+          This is an output only field.
+        type: string
+    required:
+    - expiration
+    - issuerId
+    - issuerKid
+    - presentationDefinitionId
     type: object
   github_com_tbd54566975_ssi-service_pkg_service_presentation_model.Submission:
     properties:
@@ -988,13 +990,13 @@ definitions:
       credentials:
         description: Info required to create a credential from a credential application.
         items:
-          $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_issuing.CredentialTemplate'
+          $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_issuance.CredentialTemplate'
         type: array
       id:
         description: ID of this template.
         type: string
       issuer:
-        description: ID of the issuer that will be issuing the credentials.
+        description: ID of the issuer that will be issuance the credentials.
         type: string
       issuerKid:
         description: ID of the key that will be used to sign the credentials.
@@ -1039,16 +1041,6 @@ definitions:
     type: object
   pkg_server_router.CreatePresentationDefinitionRequest:
     properties:
-      author:
-        description: |-
-          DID of the author of this presentation definition. The DID must have been previously created with the DID API,
-          or the PrivateKey must have been added independently.
-        type: string
-      authorKid:
-        description: |-
-          The privateKey associated with the KID will be used to sign an envelope that contains
-          the created presentation definition.
-        type: string
       format:
         $ref: '#/definitions/exchange.ClaimFormat'
       inputDescriptors:
@@ -1064,8 +1056,6 @@ definitions:
           $ref: '#/definitions/exchange.SubmissionRequirement'
         type: array
     required:
-    - author
-    - authorKid
     - inputDescriptors
     type: object
   pkg_server_router.CreatePresentationDefinitionResponse:
@@ -1077,6 +1067,43 @@ definitions:
           Signed envelope that contains the PresentationDefinition created using the privateKey of the author of the
           definition.
         type: string
+    type: object
+  pkg_server_router.CreateRequestRequest:
+    properties:
+      audience:
+        description: |-
+          Audience as defined in https://www.rfc-editor.org/rfc/rfc7519.html#section-4.1.3
+          Optional
+        items:
+          type: string
+        type: array
+      expiration:
+        description: |-
+          Expiration as defined in https://www.rfc-editor.org/rfc/rfc7519.html#section-4.1.4
+          Optional. When not specified, the request will be valid for a default duration.
+        type: string
+      issuerId:
+        description: |-
+          DID of the issuer of this presentation definition. The DID must have been previously created with the DID API,
+          or the PrivateKey must have been added independently.
+        type: string
+      issuerKid:
+        description: |-
+          The privateKey associated with the KID will be used to sign an envelope that contains
+          the created presentation definition.
+        type: string
+      presentationDefinitionId:
+        description: ID of the presentation definition to use for this request.
+        type: string
+    required:
+    - issuerId
+    - issuerKid
+    - presentationDefinitionId
+    type: object
+  pkg_server_router.CreateRequestResponse:
+    properties:
+      presentationRequest:
+        $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_presentation_model.Request'
     type: object
   pkg_server_router.CreateSchemaRequest:
     properties:
@@ -1112,6 +1139,10 @@ definitions:
   pkg_server_router.CreateSubmissionRequest:
     properties:
       submissionJwt:
+        description: |-
+          A Verifiable Presentation that's encoded as a JWT.
+          Verifiable Presentation are described in https://www.w3.org/TR/vc-data-model/#presentations-0
+          JWT encoding of the Presentation as described in https://www.w3.org/TR/vc-data-model/#presentations-0
         type: string
     required:
     - submissionJwt
@@ -1147,13 +1178,6 @@ definitions:
       id:
         type: string
     type: object
-  pkg_server_router.GetApplicationsResponse:
-    properties:
-      applications:
-        items:
-          $ref: '#/definitions/manifest.CredentialApplication'
-        type: array
-    type: object
   pkg_server_router.GetCredentialResponse:
     properties:
       credential:
@@ -1184,40 +1208,10 @@ definitions:
         description: Whether the credential has been suspended.
         type: boolean
     type: object
-  pkg_server_router.GetCredentialsResponse:
-    properties:
-      credentials:
-        description: Array of credential containers.
-        items:
-          $ref: '#/definitions/github_com_tbd54566975_ssi-service_internal_credential.Container'
-        type: array
-    type: object
   pkg_server_router.GetDIDByMethodResponse:
     properties:
       did:
         $ref: '#/definitions/did.Document'
-    type: object
-  pkg_server_router.GetDIDMethodsResponse:
-    properties:
-      method:
-        items:
-          $ref: '#/definitions/did.Method'
-        type: array
-    type: object
-  pkg_server_router.GetDIDsByMethodResponse:
-    properties:
-      dids:
-        items:
-          $ref: '#/definitions/did.Document'
-        type: array
-    type: object
-  pkg_server_router.GetDIDsRequest:
-    properties:
-      filter:
-        description: |-
-          A standard filter expression conforming to https://google.aip.dev/160.
-          Not implemented yet.
-        type: string
     type: object
   pkg_server_router.GetHealthCheckResponse:
     properties:
@@ -1230,55 +1224,24 @@ definitions:
       controller:
         type: string
       createdAt:
+        description: Represents the time at which the key was created. Encoded according
+          to RFC3339.
         type: string
       id:
         type: string
+      publicKeyJwk:
+        allOf:
+        - $ref: '#/definitions/jwx.PublicKeyJWK'
+        description: |-
+          The public key in JWK format according to RFC7517. This public key is associated with the private
+          key with the associated ID.
       type:
         $ref: '#/definitions/crypto.KeyType'
-    type: object
-  pkg_server_router.GetManifestResponse:
-    properties:
-      credential_manifest:
-        $ref: '#/definitions/manifest.CredentialManifest'
-      id:
-        type: string
-      manifestJwt:
-        type: string
-    type: object
-  pkg_server_router.GetManifestsResponse:
-    properties:
-      manifests:
-        items:
-          $ref: '#/definitions/pkg_server_router.GetManifestResponse'
-        type: array
-    type: object
-  pkg_server_router.GetOperationsRequest:
-    properties:
-      filter:
-        description: |-
-          A standard filter expression conforming to https://google.aip.dev/160.
-          For example: `done = true`.
-        type: string
-      parent:
-        description: 'The name of the parent''s resource. For example: "/presentation/submissions".'
-        type: string
-    type: object
-  pkg_server_router.GetOperationsResponse:
-    properties:
-      operations:
-        items:
-          $ref: '#/definitions/pkg_server_router.Operation'
-        type: array
     type: object
   pkg_server_router.GetPresentationDefinitionResponse:
     properties:
       presentation_definition:
         $ref: '#/definitions/exchange.PresentationDefinition'
-      presentationDefinitionJWT:
-        description: |-
-          Signed envelope that contains the PresentationDefinition created using the privateKey of the author of the
-          definition.
-        type: string
     type: object
   pkg_server_router.GetReadinessResponse:
     properties:
@@ -1293,6 +1256,11 @@ definitions:
         - $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_framework.Status'
         description: Overall status of the ssi service.
     type: object
+  pkg_server_router.GetRequestResponse:
+    properties:
+      presentationRequest:
+        $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_presentation_model.Request'
+    type: object
   pkg_server_router.GetResponseResponse:
     properties:
       credential_response:
@@ -1303,13 +1271,6 @@ definitions:
         description: this is an interface type to union Data Integrity and JWT style
           VCs
     type: object
-  pkg_server_router.GetResponsesResponse:
-    properties:
-      responses:
-        items:
-          $ref: '#/definitions/manifest.CredentialResponse'
-        type: array
-    type: object
   pkg_server_router.GetSchemaResponse:
     properties:
       schema:
@@ -1317,28 +1278,49 @@ definitions:
       schemaJwt:
         type: string
     type: object
-  pkg_server_router.GetSchemasResponse:
-    properties:
-      schemas:
-        items:
-          $ref: '#/definitions/pkg_server_router.GetSchemaResponse'
-        type: array
-    type: object
   pkg_server_router.GetSubmissionResponse:
     properties:
-      submission:
-        $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_presentation_model.Submission'
+      reason:
+        description: The reason why the submission was approved or denied.
+        type: string
+      status:
+        description: One of {`pending`, `approved`, `denied`, `cancelled`}.
+        type: string
+      verifiablePresentation:
+        allOf:
+        - $ref: '#/definitions/credential.VerifiablePresentation'
+        description: The verifiable presentation containing the presentation_submission
+          along with the credentials presented.
+    required:
+    - status
     type: object
-  pkg_server_router.GetWebhookResponse:
+  pkg_server_router.ListApplicationsResponse:
     properties:
-      webhook:
-        $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_webhook.Webhook'
-    type: object
-  pkg_server_router.GetWebhooksResponse:
-    properties:
-      webhooks:
+      applications:
         items:
-          $ref: '#/definitions/pkg_server_router.GetWebhookResponse'
+          $ref: '#/definitions/manifest.CredentialApplication'
+        type: array
+    type: object
+  pkg_server_router.ListCredentialsResponse:
+    properties:
+      credentials:
+        description: Array of credential containers.
+        items:
+          $ref: '#/definitions/github_com_tbd54566975_ssi-service_internal_credential.Container'
+        type: array
+    type: object
+  pkg_server_router.ListDIDMethodsResponse:
+    properties:
+      method:
+        items:
+          $ref: '#/definitions/did.Method'
+        type: array
+    type: object
+  pkg_server_router.ListDIDsByMethodResponse:
+    properties:
+      dids:
+        items:
+          $ref: '#/definitions/did.Document'
         type: array
     type: object
   pkg_server_router.ListDefinitionsRequest:
@@ -1354,7 +1336,55 @@ definitions:
     properties:
       issuanceTemplates:
         items:
-          $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_issuing.IssuanceTemplate'
+          $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_issuance.Template'
+        type: array
+    type: object
+  pkg_server_router.ListManifestResponse:
+    properties:
+      credential_manifest:
+        $ref: '#/definitions/manifest.CredentialManifest'
+      id:
+        type: string
+      manifestJwt:
+        type: string
+    type: object
+  pkg_server_router.ListManifestsResponse:
+    properties:
+      manifests:
+        items:
+          $ref: '#/definitions/pkg_server_router.ListManifestResponse'
+        type: array
+    type: object
+  pkg_server_router.ListOperationsRequest:
+    properties:
+      filter:
+        description: |-
+          A standard filter expression conforming to https://google.aip.dev/160.
+          For example: `done = true`.
+        type: string
+      parent:
+        description: 'The name of the parent''s resource. For example: "/presentation/submissions".'
+        type: string
+    type: object
+  pkg_server_router.ListOperationsResponse:
+    properties:
+      operations:
+        items:
+          $ref: '#/definitions/pkg_server_router.Operation'
+        type: array
+    type: object
+  pkg_server_router.ListResponsesResponse:
+    properties:
+      responses:
+        items:
+          $ref: '#/definitions/manifest.CredentialResponse'
+        type: array
+    type: object
+  pkg_server_router.ListSchemasResponse:
+    properties:
+      schemas:
+        items:
+          $ref: '#/definitions/pkg_server_router.GetSchemaResponse'
         type: array
     type: object
   pkg_server_router.ListSubmissionRequest:
@@ -1370,6 +1400,18 @@ definitions:
       submissions:
         items:
           $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_presentation_model.Submission'
+        type: array
+    type: object
+  pkg_server_router.ListWebhookResponse:
+    properties:
+      webhook:
+        $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_webhook.Webhook'
+    type: object
+  pkg_server_router.ListWebhooksResponse:
+    properties:
+      webhooks:
+        items:
+          $ref: '#/definitions/pkg_server_router.ListWebhookResponse'
         type: array
     type: object
   pkg_server_router.Operation:
@@ -1410,7 +1452,7 @@ definitions:
     properties:
       approved:
         type: boolean
-      credential_overrides:
+      credentialOverrides:
         additionalProperties:
           $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_manifest_model.CredentialOverride'
         description: |-
@@ -1444,6 +1486,11 @@ definitions:
           along with the credentials presented.
     required:
     - status
+    type: object
+  pkg_server_router.RevokeKeyResponse:
+    properties:
+      id:
+        type: string
     type: object
   pkg_server_router.StoreKeyRequest:
     properties:
@@ -1828,7 +1875,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/pkg_server_router.GetCredentialsResponse'
+            $ref: '#/definitions/pkg_server_router.ListCredentialsResponse'
         "400":
           description: Bad request
           schema:
@@ -1837,7 +1884,7 @@ paths:
           description: Internal server error
           schema:
             type: string
-      summary: Get Credentials
+      summary: List Credentials
       tags:
       - CredentialAPI
     put:
@@ -2052,22 +2099,22 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get supported DID method
+      description: Get the list of supported DID methods
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/pkg_server_router.GetDIDMethodsResponse'
-      summary: Get DID Methods
+            $ref: '#/definitions/pkg_server_router.ListDIDMethodsResponse'
+      summary: List DID Methods
       tags:
       - DecentralizedIdentityAPI
   /v1/dids/{method}:
     get:
       consumes:
       - application/json
-      description: Get DIDs by method. Checks for an optional "deleted=true" query
+      description: List DIDs by method. Checks for an optional "deleted=true" query
         parameter, which exclusively returns DIDs that have been "Soft Deleted".
       parameters:
       - description: When true, returns soft-deleted DIDs. Otherwise, returns DIDs
@@ -2075,19 +2122,13 @@ paths:
         in: query
         name: deleted
         type: boolean
-      - description: request body
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/pkg_server_router.GetDIDsRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/pkg_server_router.GetDIDsByMethodResponse'
+            $ref: '#/definitions/pkg_server_router.ListDIDsByMethodResponse'
         "400":
           description: Bad request
           schema:
@@ -2096,7 +2137,7 @@ paths:
           description: Internal server error
           schema:
             type: string
-      summary: Get DIDs
+      summary: List DIDs
       tags:
       - DecentralizedIdentityAPI
     put:
@@ -2143,7 +2184,7 @@ paths:
       - application/json
       description: |-
         When this is called with the correct did method and id it will flip the softDelete flag to true for the db entry.
-        A user can still get the did if they know the DID ID, and the did keys will still exist, but this did will not show up in the GetDIDsByMethod call
+        A user can still get the did if they know the DID ID, and the did keys will still exist, but this did will not show up in the ListDIDsByMethod call
         This facilitates a clean SSI-Service Admin UI but not leave any hanging VCs with inaccessible hanging DIDs.
         Soft Deletes DID by method
       parameters:
@@ -2253,7 +2294,7 @@ paths:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_issuing.IssuanceTemplate'
+            $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_issuance.Template'
         "400":
           description: Bad request
           schema:
@@ -2264,7 +2305,7 @@ paths:
             type: string
       summary: Create issuance template
       tags:
-      - IssuingAPI
+      - IssuanceAPI
   /v1/issuancetemplates/{id}:
     delete:
       consumes:
@@ -2293,7 +2334,7 @@ paths:
             type: string
       summary: Delete issuance template
       tags:
-      - IssuingAPI
+      - IssuanceAPI
     get:
       consumes:
       - application/json
@@ -2310,14 +2351,14 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_issuing.IssuanceTemplate'
+            $ref: '#/definitions/github_com_tbd54566975_ssi-service_pkg_service_issuance.Template'
         "400":
           description: Bad request
           schema:
             type: string
       summary: Get issuance template
       tags:
-      - IssuingAPI
+      - IssuanceAPI
   /v1/keys:
     put:
       consumes:
@@ -2364,6 +2405,8 @@ paths:
       responses:
         "200":
           description: OK
+          schema:
+            $ref: '#/definitions/pkg_server_router.RevokeKeyResponse'
         "400":
           description: Bad request
           schema:
@@ -2424,7 +2467,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/pkg_server_router.GetManifestsResponse'
+            $ref: '#/definitions/pkg_server_router.ListManifestsResponse'
         "400":
           description: Bad request
           schema:
@@ -2433,7 +2476,7 @@ paths:
           description: Internal server error
           schema:
             type: string
-      summary: Get manifests
+      summary: List manifests
       tags:
       - ManifestAPI
     put:
@@ -2510,7 +2553,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/pkg_server_router.GetManifestResponse'
+            $ref: '#/definitions/pkg_server_router.ListManifestResponse'
         "400":
           description: Bad request
           schema:
@@ -2522,19 +2565,19 @@ paths:
     get:
       consumes:
       - application/json
-      description: Gets all the existing applications.
+      description: List all the existing applications.
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/pkg_server_router.GetApplicationsResponse'
+            $ref: '#/definitions/pkg_server_router.ListApplicationsResponse'
         "500":
           description: Internal server error
           schema:
             type: string
-      summary: Get applications
+      summary: List applications
       tags:
       - ApplicationAPI
     put:
@@ -2655,20 +2698,19 @@ paths:
     get:
       consumes:
       - application/json
-      description: Checks for the presence of a query parameter and calls the associated
-        filtered get method
+      description: Lists all responses
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/pkg_server_router.GetResponsesResponse'
+            $ref: '#/definitions/pkg_server_router.ListResponsesResponse'
         "500":
           description: Internal server error
           schema:
             type: string
-      summary: Get responses
+      summary: List responses
       tags:
       - ResponseAPI
   /v1/manifests/responses/{id}:
@@ -2739,14 +2781,14 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/pkg_server_router.GetOperationsRequest'
+          $ref: '#/definitions/pkg_server_router.ListOperationsRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/pkg_server_router.GetOperationsResponse'
+            $ref: '#/definitions/pkg_server_router.ListOperationsResponse'
         "400":
           description: Bad request
           schema:
@@ -2899,6 +2941,90 @@ paths:
       summary: Get PresentationDefinition
       tags:
       - PresentationDefinitionAPI
+  /v1/presentation/request:
+    put:
+      consumes:
+      - application/json
+      description: Create presentation request from an existing presentation definition.
+      parameters:
+      - description: request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pkg_server_router.CreateRequestRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/pkg_server_router.CreateRequestResponse'
+        "400":
+          description: Bad request
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Create Presentation Request
+      tags:
+      - PresentationRequestAPI
+  /v1/presentation/request/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Get a presentation request by its ID
+      parameters:
+      - description: ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg_server_router.GetRequestResponse'
+        "400":
+          description: Bad request
+          schema:
+            type: string
+      summary: Get Presentation Request
+      tags:
+      - PresentationRequestAPI
+  /v1/presentation/requests/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a presentation request by its ID
+      parameters:
+      - description: ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+          schema:
+            type: string
+        "400":
+          description: Bad request
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Delete PresentationRequest
+      tags:
+      - PresentationRequestAPI
   /v1/presentations/definitions:
     get:
       consumes:
@@ -3050,19 +3176,19 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get schemas
+      description: List schemas
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/pkg_server_router.GetSchemasResponse'
+            $ref: '#/definitions/pkg_server_router.ListSchemasResponse'
         "500":
           description: Internal server error
           schema:
             type: string
-      summary: Get Schemas
+      summary: List Schemas
       tags:
       - SchemaAPI
     put:
@@ -3177,19 +3303,19 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get webhooks
+      description: Lists all webhooks
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/pkg_server_router.GetWebhooksResponse'
+            $ref: '#/definitions/pkg_server_router.ListWebhooksResponse'
         "500":
           description: Internal server error
           schema:
             type: string
-      summary: Get Webhooks
+      summary: List Webhooks
       tags:
       - WebhookAPI
     put:
@@ -3238,7 +3364,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/pkg_server_router.GetWebhookResponse'
+            $ref: '#/definitions/pkg_server_router.ListWebhookResponse'
         "400":
           description: Bad request
           schema:

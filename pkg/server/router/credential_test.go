@@ -24,7 +24,6 @@ import (
 )
 
 func TestCredentialRouter(t *testing.T) {
-
 	t.Run("Nil Service", func(tt *testing.T) {
 		credRouter, err := NewCredentialRouter(nil)
 		assert.Error(tt, err)
@@ -41,7 +40,7 @@ func TestCredentialRouter(t *testing.T) {
 
 	t.Run("Credential Service Test", func(tt *testing.T) {
 		bolt := setupTestDB(tt)
-		assert.NotNil(tt, bolt)
+		assert.NotEmpty(tt, bolt)
 
 		serviceConfig := config.CredentialServiceConfig{BaseServiceConfig: &config.BaseServiceConfig{Name: "credential"}}
 		keyStoreService := testKeyStoreService(tt, bolt)
@@ -104,13 +103,13 @@ func TestCredentialRouter(t *testing.T) {
 		assert.Contains(tt, err.Error(), "credential not found with id: bad")
 
 		// get by schema - no schema
-		bySchema, err := credService.GetCredentialsBySchema(context.Background(), credential.GetCredentialBySchemaRequest{Schema: ""})
+		bySchema, err := credService.ListCredentialsBySchema(context.Background(), credential.ListCredentialBySchemaRequest{Schema: ""})
 		assert.NoError(tt, err)
 		assert.Len(tt, bySchema.Credentials, 1)
 		assert.EqualValues(tt, cred.CredentialSchema, bySchema.Credentials[0].Credential.CredentialSchema)
 
 		// get by subject
-		bySubject, err := credService.GetCredentialsBySubject(context.Background(), credential.GetCredentialBySubjectRequest{Subject: subject})
+		bySubject, err := credService.ListCredentialsBySubject(context.Background(), credential.ListCredentialBySubjectRequest{Subject: subject})
 		assert.NoError(tt, err)
 		assert.Len(tt, bySubject.Credentials, 1)
 
@@ -118,7 +117,7 @@ func TestCredentialRouter(t *testing.T) {
 		assert.Equal(tt, cred.CredentialSubject[credsdk.VerifiableCredentialIDProperty], bySubject.Credentials[0].Credential.CredentialSubject[credsdk.VerifiableCredentialIDProperty])
 
 		// get by issuer
-		byIssuer, err := credService.GetCredentialsByIssuer(context.Background(), credential.GetCredentialByIssuerRequest{Issuer: issuer})
+		byIssuer, err := credService.ListCredentialsByIssuer(context.Background(), credential.ListCredentialByIssuerRequest{Issuer: issuer})
 		assert.NoError(tt, err)
 		assert.Len(tt, byIssuer.Credentials, 1)
 
@@ -169,19 +168,19 @@ func TestCredentialRouter(t *testing.T) {
 		assert.NotEmpty(tt, createdCredWithSchema)
 
 		// get by issuer
-		byIssuer, err = credService.GetCredentialsByIssuer(context.Background(), credential.GetCredentialByIssuerRequest{Issuer: issuer})
+		byIssuer, err = credService.ListCredentialsByIssuer(context.Background(), credential.ListCredentialByIssuerRequest{Issuer: issuer})
 		assert.NoError(tt, err)
 		assert.Len(tt, byIssuer.Credentials, 2)
 
 		// make sure the schema and subject queries are consistent
-		bySchema, err = credService.GetCredentialsBySchema(context.Background(), credential.GetCredentialBySchemaRequest{Schema: ""})
+		bySchema, err = credService.ListCredentialsBySchema(context.Background(), credential.ListCredentialBySchemaRequest{Schema: ""})
 		assert.NoError(tt, err)
 		assert.Len(tt, bySchema.Credentials, 1)
 
 		assert.Equal(tt, cred.ID, bySchema.Credentials[0].ID)
 		assert.EqualValues(tt, cred.CredentialSchema, bySchema.Credentials[0].Credential.CredentialSchema)
 
-		bySubject, err = credService.GetCredentialsBySubject(context.Background(), credential.GetCredentialBySubjectRequest{Subject: subject})
+		bySubject, err = credService.ListCredentialsBySubject(context.Background(), credential.ListCredentialBySubjectRequest{Subject: subject})
 		assert.NoError(tt, err)
 		assert.Len(tt, bySubject.Credentials, 1)
 
@@ -204,7 +203,7 @@ func TestCredentialRouter(t *testing.T) {
 
 	t.Run("Credential Status List Test", func(tt *testing.T) {
 		bolt := setupTestDB(tt)
-		assert.NotNil(tt, bolt)
+		assert.NotEmpty(tt, bolt)
 
 		serviceConfig := config.CredentialServiceConfig{BaseServiceConfig: &config.BaseServiceConfig{Name: "credential"}}
 		keyStoreService := testKeyStoreService(tt, bolt)
@@ -324,7 +323,7 @@ func TestCredentialRouter(t *testing.T) {
 
 	t.Run("Credential Status List Test No Schemas", func(tt *testing.T) {
 		bolt := setupTestDB(tt)
-		assert.NotNil(tt, bolt)
+		assert.NotEmpty(tt, bolt)
 
 		serviceConfig := config.CredentialServiceConfig{BaseServiceConfig: &config.BaseServiceConfig{Name: "credential"}}
 		keyStoreService := testKeyStoreService(tt, bolt)
@@ -438,7 +437,7 @@ func TestCredentialRouter(t *testing.T) {
 
 	t.Run("Credential Status List Test Update Revoked Status", func(tt *testing.T) {
 		bolt := setupTestDB(tt)
-		assert.NotNil(tt, bolt)
+		assert.NotEmpty(tt, bolt)
 
 		serviceConfig := config.CredentialServiceConfig{BaseServiceConfig: &config.BaseServiceConfig{Name: "credential", ServiceEndpoint: "http://localhost:1234"}}
 		keyStoreService := testKeyStoreService(tt, bolt)
@@ -565,7 +564,7 @@ func TestCredentialRouter(t *testing.T) {
 
 	t.Run("Create Multiple Suspendable Credential Different IssuerDID SchemaID StatusPurpose Triples", func(tt *testing.T) {
 		bolt := setupTestDB(tt)
-		assert.NotNil(tt, bolt)
+		assert.NotEmpty(tt, bolt)
 
 		serviceConfig := config.CredentialServiceConfig{BaseServiceConfig: &config.BaseServiceConfig{Name: "credential", ServiceEndpoint: "http://localhost:1234"}}
 		keyStoreService := testKeyStoreService(tt, bolt)
