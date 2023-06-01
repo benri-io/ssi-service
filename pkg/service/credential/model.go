@@ -20,6 +20,7 @@ type CreateCredentialRequest struct {
 	Expiry      string         `json:"expiry,omitempty"`
 	Revocable   bool           `json:"revocable,omitempty"`
 	Suspendable bool           `json:"suspendable,omitempty"`
+	Types       []string       `json:"types,omitempty"`
 	// TODO(gabe) support more capabilities like signature type, format, status, and more.
 }
 
